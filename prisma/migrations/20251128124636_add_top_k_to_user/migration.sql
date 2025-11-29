@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "topK" INTEGER NOT NULL DEFAULT 5;

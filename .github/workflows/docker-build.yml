@@ -1,0 +1,69 @@
+name: Docker Build and Push
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for git diff
+
+      - name: Check Prisma Migrations
+        run: |
+          # Get the list of changed files in the last commit
+          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+          
+          # Check if schema.prisma was modified
+          if echo "$CHANGED_FILES" | grep -q "prisma/schema.prisma"; then
+            echo "⚠️  prisma/schema.prisma has been modified."
+            
+            # Check if any new migration file was added
+            if ! echo "$CHANGED_FILES" | grep -q "prisma/migrations/"; then
+              echo "❌  ERROR: Schema changed but no migration file found!"
+              echo "💡  Please run 'prisma migrate dev' locally and commit the generated migration files."
+              exit 1
+            else
+              echo "✅  Migration files found."
+            fi
+          else
+            echo "ℹ️  No schema changes detected."
+          fi
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

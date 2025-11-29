@@ -1,0 +1,99 @@
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+  previewFeatures      = ["postgresqlExtensions"]
+}
+
+model User {
+  id                  Int        @id @default(autoincrement())
+  githubId            String     @unique
+  username            String
+  email               String?
+  avatarUrl           String?
+  role                Role       @default(USER)
+  topK                Int        @default(10)
+  similarityThreshold Float      @default(0.5)
+  banned              Boolean    @default(false)
+  bannedAt            DateTime?
+  banReason           String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  activities          Activity[]
+  documents           Document[]
+  apiKeys             ApiKey[]
+}
+
+model ApiKey {
+  id          Int       @id @default(autoincrement())
+  key         String    @unique
+  name        String
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  isActive    Boolean   @default(true)
+
+  @@index([userId])
+  @@index([key])
+}
+
+model Document {
+  id        Int                    @id @default(autoincrement())
+  content   String
+  metadata  Json?
+  embedding Unsupported("vector")?
+  userId    Int
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@index([userId])
+}
+
+// User activity type enum
+enum ActivityType {
+  DOCUMENT_ADD
+  DOCUMENT_UPDATE
+  DOCUMENT_DELETE
+  SEARCH
+  RAG_QUERY
+  LOGIN
+  SYSTEM
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+// User activity record
+model Activity {
+  id          Int          @id @default(autoincrement())
+  userId      Int
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        ActivityType
+  title       String
+  description String?
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// System Configuration
+model SystemConfig {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

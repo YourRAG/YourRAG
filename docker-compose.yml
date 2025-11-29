@@ -1,0 +1,99 @@
+services:
+  rag-app:
+    image: ghcr.io/hunttntt/rag:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000 
+      - NEXT_PUBLIC_API_URL=http://rag-app:8000
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:6432/${POSTGRES_DB}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - PUBLIC_KEY=${PUBLIC_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - RATE_LIMIT_CAPACITY=${RATE_LIMIT_CAPACITY:-10}
+      - RATE_LIMIT_RATE=${RATE_LIMIT_RATE:-1.0}
+      - GLOBAL_RATE_LIMIT_CAPACITY=${GLOBAL_RATE_LIMIT_CAPACITY:-100}
+      - GLOBAL_RATE_LIMIT_RATE=${GLOBAL_RATE_LIMIT_RATE:-10.0}
+      - ENVIRONMENT=production
+      - EMBEDDING_VECTOR_DIMENSION=${EMBEDDING_VECTOR_DIMENSION:-1024}
+    depends_on:
+      - pgbouncer
+      - redis
+    networks:
+      - app-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    restart: always
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    networks:
+      - app-net
+
+  # PostgreSQL 数据库服务 (带 pgvector)
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: postgres-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-net
+
+  postgres-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    restart: always
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+      HEALTHCHECK_PORT: 5432
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      - db
+    networks:
+      - app-net
+
+  pgbouncer:
+    image: edoburu/pgbouncer
+    container_name: my_pgbouncer
+    restart: always
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      LISTEN_PORT: 6432
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 20
+      AUTH_TYPE: plain
+    depends_on:
+      - db
+    networks:
+      - app-net
+
+volumes:
+  postgres_data:
+
+networks:
+  app-net:
+    driver: bridge

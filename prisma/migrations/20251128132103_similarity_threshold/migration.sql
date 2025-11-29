@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "User" ALTER COLUMN "topK" SET DEFAULT 10,
+ALTER COLUMN "similarityThreshold" SET DEFAULT 0.5;
