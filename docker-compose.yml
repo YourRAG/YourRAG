@@ -1,6 +1,6 @@
 services:
   rag-app:
-    image: ghcr.io/YourRAG/rag:latest
+    image: ghcr.io/yourrag/yourrag:latest
     ports:
       - "3000:3000"
     environment:
