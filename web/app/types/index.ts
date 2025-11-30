@@ -1,4 +1,4 @@
-export type TabType = "ask" | "search" | "add" | "manage" | "profile" | "admin";
+export type TabType = "ask" | "search" | "add" | "manage" | "activity" | "profile" | "admin";
 
 export type Role = "USER" | "ADMIN";
 

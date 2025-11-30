@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Database, MessageSquare, Search, Plus, List, ShieldX, Github, Lock, Sparkles, BookOpen, Zap } from "lucide-react";
+import { Database, MessageSquare, Search, Plus, List, ShieldX, Github, Lock, Sparkles, BookOpen, Zap, Activity } from "lucide-react";
 import { TabType } from "./types";
 import AskTab from "./components/AskTab";
 import SearchTab from "./components/SearchTab";
 import AddDocumentTab from "./components/AddDocumentTab";
 import ManageTab from "./components/ManageTab";
+import RecentActivityTab from "./components/RecentActivityTab";
 import ProfileTab from "./components/ProfileTab";
 import AdminTab from "./components/AdminTab";
 import UserMenu from "./components/UserMenu";
@@ -21,7 +22,7 @@ function HomeContent() {
 
   useEffect(() => {
     const tab = searchParams.get("tab");
-    if (tab && ["ask", "search", "add", "manage", "profile", "admin"].includes(tab)) {
+    if (tab && ["ask", "search", "add", "manage", "activity", "profile", "admin"].includes(tab)) {
       setActiveTab(tab as TabType);
     }
   }, [searchParams]);
@@ -114,6 +115,17 @@ function HomeContent() {
                 >
                   <List className="w-4 h-4" />
                   <span className="hidden sm:inline">Manage</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab("activity")}
+                  className={`p-1.5 sm:px-4 sm:py-1.5 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                    activeTab === "activity"
+                      ? "bg-white text-blue-600 shadow-sm ring-1 ring-black/5"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+                  }`}
+                >
+                  <Activity className="w-4 h-4" />
+                  <span className="hidden sm:inline">Activity</span>
                 </button>
                 {user.role === "ADMIN" && (
                   <button
@@ -219,6 +231,7 @@ function HomeContent() {
             {activeTab === "search" && <SearchTab />}
             {activeTab === "add" && <AddDocumentTab />}
             {activeTab === "manage" && <ManageTab />}
+            {activeTab === "activity" && <RecentActivityTab />}
             {activeTab === "profile" && <ProfileTab user={user} onUnauthorized={handleUnauthorized} onUpdate={refetch} />}
             {activeTab === "admin" && user.role === "ADMIN" && <AdminTab />}
           </div>

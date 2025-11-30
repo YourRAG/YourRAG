@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { User, Activity, UserStats } from "../types";
-import { Github, Mail, Calendar, User as UserIcon, Shield, Activity as ActivityIcon, MapPin, Clock, FileText, Search, Database, Loader2, RefreshCw, Settings, Save, Key } from "lucide-react";
+import { User, UserStats } from "../types";
+import { Github, Mail, Calendar, User as UserIcon, Shield, Activity as ActivityIcon, MapPin, FileText, Search, Database, Loader2, RefreshCw, Settings, Save, Key } from "lucide-react";
 import ApiKeyManager from "./ApiKeyManager";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -13,28 +13,6 @@ interface ProfileTabProps {
   onUpdate?: () => void;
 }
 
-function formatRelativeTime(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  const diffHours = Math.floor(diffMinutes / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffSeconds < 60) {
-    return "just now";
-  } else if (diffMinutes < 60) {
-    return `${diffMinutes} minute${diffMinutes > 1 ? "s" : ""} ago`;
-  } else if (diffHours < 24) {
-    return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
-  } else if (diffDays < 7) {
-    return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
-  } else {
-    return date.toLocaleDateString();
-  }
-}
-
 function formatNumber(num: number): string {
   if (num >= 1000) {
     return (num / 1000).toFixed(1) + "k+";
@@ -43,7 +21,6 @@ function formatNumber(num: number): string {
 }
 
 export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTabProps) {
-  const [activities, setActivities] = useState<Activity[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -128,20 +105,12 @@ export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTa
     setError(null);
     
     try {
-      const [activitiesRes, statsRes] = await Promise.all([
-        fetch(`${API_URL}/activities?limit=10`, { credentials: "include" }),
-        fetch(`${API_URL}/user/stats`, { credentials: "include" })
-      ]);
+      const statsRes = await fetch(`${API_URL}/user/stats`, { credentials: "include" });
 
       // Check for 403 (banned) response
-      if (activitiesRes.status === 403 || statsRes.status === 403) {
+      if (statsRes.status === 403) {
         onUnauthorized?.();
         return;
-      }
-
-      if (activitiesRes.ok) {
-        const activitiesData = await activitiesRes.json();
-        setActivities(activitiesData.activities || []);
       }
 
       if (statsRes.ok) {
@@ -267,103 +236,6 @@ export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTa
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
             {/* Left Column - Info */}
             <div className="space-y-6">
-                {/* System Config Card (Admin Only) */}
-                {user.role === "ADMIN" && (
-                  <>
-                    {/* Active Instances Card */}
-                    <div className="bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
-                      <div className="flex items-center gap-2 mb-4">
-                        <ActivityIcon className="w-4 h-4 text-slate-500" />
-                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Instances</h3>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-slate-600">Total Instances</span>
-                          <span className="text-sm font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
-                            {activeInstances.length}
-                          </span>
-                        </div>
-                        
-                        {activeInstances.length > 0 ? (
-                          <div className="mt-3 space-y-2">
-                            {activeInstances.map((instance, idx) => (
-                              <div key={idx} className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                                <span className="font-mono truncate" title={instance}>{instance}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-slate-400 italic">No active instances found</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
-                      <div className="flex items-center gap-2 mb-4">
-                        <Settings className="w-4 h-4 text-slate-500" />
-                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">System Configuration</h3>
-                      </div>
-                      
-                      <div className="space-y-4">
-                      {[
-                        "EMBEDDING_API_URL",
-                        "EMBEDDING_API_KEY",
-                        "EMBEDDING_MODEL_NAME",
-                        "EMBEDDING_VECTOR_DIMENSION",
-                        "LLM_API_URL",
-                        "LLM_API_KEY",
-                        "LLM_MODEL_NAME",
-                        "RAG_SYSTEM_PROMPT"
-                      ].map((key) => (
-                        <div key={key}>
-                          <label className="block text-xs font-medium text-slate-700 mb-1 truncate" title={key}>
-                            {key}
-                          </label>
-                          {key === "RAG_SYSTEM_PROMPT" ? (
-                            <textarea
-                              value={systemConfig[key] || ""}
-                              onChange={(e) => setSystemConfig(prev => ({ ...prev, [key]: e.target.value }))}
-                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[100px]"
-                              placeholder={`Enter ${key}`}
-                            />
-                          ) : (
-                            <input
-                              type={key.includes("KEY") ? "password" : "text"}
-                              value={systemConfig[key] || ""}
-                              onChange={(e) => setSystemConfig(prev => ({ ...prev, [key]: e.target.value }))}
-                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                              placeholder={`Enter ${key}`}
-                            />
-                          )}
-                        </div>
-                      ))}
-
-                      <div className="pt-2">
-                        <button
-                          onClick={handleSaveSystemConfig}
-                          disabled={isSavingSystemConfig}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {isSavingSystemConfig ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Save className="w-4 h-4" />
-                          )}
-                          Save System Config
-                        </button>
-                        {systemConfigMessage && (
-                          <p className={`text-xs text-center mt-2 ${systemConfigMessage.includes("Failed") ? "text-red-500" : "text-green-500"}`}>
-                            {systemConfigMessage}
-                          </p>
-                        )}
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-
                 {/* API Keys Card */}
                 <div className="bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
                   <div className="flex items-center gap-2 mb-4">
@@ -528,61 +400,102 @@ export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTa
                     </div>
                 </div>
 
-                {/* Recent Activity Timeline */}
-                <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-xl">
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-bold text-slate-900">Recent Activity</h3>
-                        <div className="flex items-center gap-2">
-                          {stats && (
-                            <span className="text-xs text-slate-500">
-                              {stats.totalActivities} total
-                            </span>
+                {/* System Config Card (Admin Only) */}
+                {user.role === "ADMIN" && (
+                  <>
+                    {/* Active Instances Card */}
+                    <div className="bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
+                      <div className="flex items-center gap-2 mb-4">
+                        <ActivityIcon className="w-4 h-4 text-slate-500" />
+                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Instances</h3>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-600">Total Instances</span>
+                          <span className="text-sm font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
+                            {activeInstances.length}
+                          </span>
+                        </div>
+                        
+                        {activeInstances.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            {activeInstances.map((instance, idx) => (
+                              <div key={idx} className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                                <span className="font-mono truncate" title={instance}>{instance}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-400 italic">No active instances found</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Settings className="w-4 h-4 text-slate-500" />
+                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">System Configuration</h3>
+                      </div>
+                      
+                      <div className="space-y-4">
+                      {[
+                        "EMBEDDING_API_URL",
+                        "EMBEDDING_API_KEY",
+                        "EMBEDDING_MODEL_NAME",
+                        "EMBEDDING_VECTOR_DIMENSION",
+                        "LLM_API_URL",
+                        "LLM_API_KEY",
+                        "LLM_MODEL_NAME",
+                        "RAG_SYSTEM_PROMPT"
+                      ].map((key) => (
+                        <div key={key}>
+                          <label className="block text-xs font-medium text-slate-700 mb-1 truncate" title={key}>
+                            {key}
+                          </label>
+                          {key === "RAG_SYSTEM_PROMPT" ? (
+                            <textarea
+                              value={systemConfig[key] || ""}
+                              onChange={(e) => setSystemConfig(prev => ({ ...prev, [key]: e.target.value }))}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[100px]"
+                              placeholder={`Enter ${key}`}
+                            />
+                          ) : (
+                            <input
+                              type={key.includes("KEY") ? "password" : "text"}
+                              value={systemConfig[key] || ""}
+                              onChange={(e) => setSystemConfig(prev => ({ ...prev, [key]: e.target.value }))}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                              placeholder={`Enter ${key}`}
+                            />
                           )}
                         </div>
-                    </div>
-                    
-                    {initialLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
-                      </div>
-                    ) : error ? (
-                      <div className="text-center py-8 text-slate-500">
-                        <p>{error}</p>
+                      ))}
+
+                      <div className="pt-2">
                         <button
-                          onClick={handleRefresh}
-                          className="mt-2 text-sm text-slate-600 hover:text-slate-900"
+                          onClick={handleSaveSystemConfig}
+                          disabled={isSavingSystemConfig}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
-                          Try again
+                          {isSavingSystemConfig ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Save className="w-4 h-4" />
+                          )}
+                          Save System Config
                         </button>
+                        {systemConfigMessage && (
+                          <p className={`text-xs text-center mt-2 ${systemConfigMessage.includes("Failed") ? "text-red-500" : "text-green-500"}`}>
+                            {systemConfigMessage}
+                          </p>
+                        )}
+                        </div>
                       </div>
-                    ) : activities.length === 0 ? (
-                      <div className="text-center py-12 text-slate-500">
-                        <ActivityIcon className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                        <p className="font-medium">No activity yet</p>
-                        <p className="text-sm mt-1">Your actions will appear here</p>
-                      </div>
-                    ) : (
-                      <div className="relative pl-4 border-l border-slate-200 space-y-8">
-                        {activities.map((activity) => (
-                          <div key={activity.id} className="relative">
-                            <div className="absolute -left-[21px] top-1.5 w-3 h-3 bg-white border-2 border-slate-300"></div>
-                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                                <div>
-                                    <p className="text-sm font-semibold text-slate-900">{activity.title}</p>
-                                    {activity.description && (
-                                      <p className="text-xs text-slate-500 mt-1">{activity.description}</p>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-1 text-xs text-slate-400 whitespace-nowrap">
-                                    <Clock className="w-3 h-3" />
-                                    <span>{formatRelativeTime(activity.createdAt)}</span>
-                                </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                </div>
+                    </div>
+                  </>
+                )}
             </div>
           </div>
         </div>
