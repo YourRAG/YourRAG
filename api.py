@@ -407,6 +407,17 @@ async def get_activities(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/activities")
+async def clear_activities(current_user=Depends(get_current_user)):
+    """Clear all activities for the current user."""
+    try:
+        service = ActivityService(prisma)
+        count = await service.clear_user_activities(current_user.id)
+        return {"message": f"Successfully cleared {count} activities"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/user/stats", response_model=UserStatsResponse)
 async def get_user_stats(current_user=Depends(get_current_user)):
     """Get current user's statistics."""

@@ -126,14 +126,39 @@ export default function RecentActivityTab() {
           <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Recent Activity</h2>
           <p className="text-slate-500 mt-1">Track your interactions and history.</p>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing || loading}
-          className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-all disabled:opacity-50"
-          title="Refresh"
-        >
-          <RefreshCw className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          {activities.length > 0 && (
+            <button
+              onClick={async () => {
+                if (confirm("Are you sure you want to clear all activity history?")) {
+                  try {
+                    const res = await fetch(`${API_URL}/activities`, {
+                      method: "DELETE",
+                      credentials: "include",
+                    });
+                    if (res.ok) {
+                      handleRefresh();
+                    }
+                  } catch (err) {
+                    console.error("Failed to clear activities:", err);
+                  }
+                }
+              }}
+              className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all"
+              title="Clear History"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-all disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
 
       {loading && !refreshing ? (

@@ -42,18 +42,21 @@ class ActivityService:
             metadata: 额外元数据
         """
         try:
+            import json
             await self.prisma.activity.create(
                 data={
-                    "user": {"connect": {"id": user_id}},
+                    "userId": user_id,
                     "type": activity_type.value,
                     "title": title,
                     "description": description,
-                    "metadata": metadata if metadata else None
+                    "metadata": json.dumps(metadata) if metadata else "{}"
                 }
             )
         except Exception as e:
             # 记录活动失败不应影响主要业务逻辑
             print(f"Failed to record activity: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def get_user_activities(
         self,
@@ -147,6 +150,21 @@ class ActivityService:
             "queryCount": rag_query_count,
             "totalActivities": total_activities
         }
+
+    async def clear_user_activities(self, user_id: int) -> int:
+        """
+        清空用户的所有活动记录
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            删除的记录数量
+        """
+        result = await self.prisma.activity.delete_many(
+            where={"userId": user_id}
+        )
+        return result
 
 
 # 辅助函数，用于快速记录活动
