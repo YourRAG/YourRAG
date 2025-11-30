@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { RAGMessage, SearchResult } from "../types";
 import Markdown from "./Markdown";
+import { AlertModal } from "./Modal";
 
 export default function AskTab() {
   const [query, setQuery] = useState("");
@@ -39,6 +40,7 @@ export default function AskTab() {
   const [apiKeys, setApiKeys] = useState<{ id: number; key: string; name: string }[]>([]);
   const [selectedApiKey, setSelectedApiKey] = useState<string>("");
   const [loadingKeys, setLoadingKeys] = useState(false);
+  const [showAuthAlert, setShowAuthAlert] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -91,7 +93,7 @@ export default function AskTab() {
     if (!query.trim() || isAsking) return;
 
     if (!selectedApiKey) {
-      alert("Please select an API Key to continue. If you don't have one, please create one in your Profile.");
+      setShowAuthAlert(true);
       return;
     }
 
@@ -581,6 +583,13 @@ export default function AskTab() {
           </form>
         </div>
       </div>
+      <AlertModal
+        isOpen={showAuthAlert}
+        onClose={() => setShowAuthAlert(false)}
+        title="API Key Required"
+        message="Please select an API Key to continue. If you don't have one, please create one in your Profile."
+        variant="info"
+      />
     </div>
   );
 }

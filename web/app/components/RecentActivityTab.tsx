@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Activity, ActivityType } from "../types";
 import { Clock, Activity as ActivityIcon, Loader2, RefreshCw, FileText, Search, MessageSquare, LogIn, Settings, Trash2 } from "lucide-react";
 import Pagination from "./Pagination";
+import { ConfirmModal } from "./Modal";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -76,6 +77,7 @@ export default function RecentActivityTab() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const pageSize = 10;
 
   const fetchActivities = useCallback(async (pageNum: number, isRefresh = false) => {
@@ -129,21 +131,7 @@ export default function RecentActivityTab() {
         <div className="flex items-center gap-2">
           {activities.length > 0 && (
             <button
-              onClick={async () => {
-                if (confirm("Are you sure you want to clear all activity history?")) {
-                  try {
-                    const res = await fetch(`${API_URL}/activities`, {
-                      method: "DELETE",
-                      credentials: "include",
-                    });
-                    if (res.ok) {
-                      handleRefresh();
-                    }
-                  } catch (err) {
-                    console.error("Failed to clear activities:", err);
-                  }
-                }
-              }}
+              onClick={() => setShowClearConfirm(true)}
               className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all"
               title="Clear History"
             >
@@ -232,6 +220,27 @@ export default function RecentActivityTab() {
           />
         </div>
       )}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={async () => {
+          try {
+            const res = await fetch(`${API_URL}/activities`, {
+              method: "DELETE",
+              credentials: "include",
+            });
+            if (res.ok) {
+              handleRefresh();
+            }
+          } catch (err) {
+            console.error("Failed to clear activities:", err);
+          }
+        }}
+        title="Clear History"
+        message="Are you sure you want to clear all activity history? This action cannot be undone."
+        confirmText="Clear History"
+        variant="danger"
+      />
     </div>
   );
 }

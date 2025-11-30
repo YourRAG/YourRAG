@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Key, Trash2, Copy, Plus, Calendar, Check, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
+import { ConfirmModal } from "./Modal";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -24,6 +25,7 @@ export default function ApiKeyManager() {
   const [newKeyName, setNewKeyName] = useState("");
   const [expiryDays, setExpiryDays] = useState<number | "never">(30);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const fetchApiKeys = useCallback(async () => {
     try {
@@ -85,8 +87,6 @@ export default function ApiKeyManager() {
   };
 
   const handleDeleteKey = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this API key? This action cannot be undone.")) return;
-
     try {
       const res = await fetch(`${API_URL}/user/apikeys/${id}`, {
         method: "DELETE",
@@ -209,7 +209,7 @@ export default function ApiKeyManager() {
                   </div>
                 </div>
                 <button
-                  onClick={() => handleDeleteKey(apiKey.id)}
+                  onClick={() => setDeleteId(apiKey.id)}
                   className="text-slate-400 hover:text-red-600 transition-colors p-1"
                   title="Delete Key"
                 >
@@ -233,14 +233,23 @@ export default function ApiKeyManager() {
               </div>
               
               {apiKey.expiresAt && (
-                 <div className="mt-2 text-xs text-slate-500">
-                    Expires: {format(new Date(apiKey.expiresAt), "MMM d, yyyy")}
-                 </div>
-              )}
+                         <div className="mt-2 text-xs text-slate-500">
+                            Expires: {format(new Date(apiKey.expiresAt), "MMM d, yyyy")}
+                         </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              <ConfirmModal
+                isOpen={!!deleteId}
+                onClose={() => setDeleteId(null)}
+                onConfirm={() => deleteId && handleDeleteKey(deleteId)}
+                title="Delete API Key"
+                message="Are you sure you want to delete this API key? This action cannot be undone."
+                confirmText="Delete"
+                variant="danger"
+              />
             </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
+          );
+        }

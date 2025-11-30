@@ -9,7 +9,7 @@ import {
   Shield, 
 } from "lucide-react";
 import { User } from "../types";
-import Modal from "./Modal";
+import Modal, { ConfirmModal } from "./Modal";
 import UserListTable, { AdminUser } from "./UserListTable";
 
 interface AdminStats {
@@ -45,6 +45,7 @@ export default function AdminTab() {
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [banReason, setBanReason] = useState("");
   const [showBanModal, setShowBanModal] = useState(false);
+  const [showUnbanConfirm, setShowUnbanConfirm] = useState<{ isOpen: boolean; user: AdminUser | null }>({ isOpen: false, user: null });
   const [actionLoading, setActionLoading] = useState(false);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -155,8 +156,6 @@ export default function AdminTab() {
   };
 
   const handleUnbanUser = async (user: AdminUser) => {
-    if (!confirm(`Are you sure you want to unban ${user.username}?`)) return;
-
     setActionLoading(true);
     try {
       const res = await fetch(`${API_URL}/admin/users/${user.id}/unban`, {
@@ -252,7 +251,7 @@ export default function AdminTab() {
         totalPages={adminTotalPages}
         onPageChange={setAdminPage}
         onBanUser={openBanModal}
-        onUnbanUser={handleUnbanUser}
+        onUnbanUser={(user) => setShowUnbanConfirm({ isOpen: true, user })}
         actionLoading={actionLoading}
         emptyMessage="No administrators found"
       />
@@ -267,7 +266,7 @@ export default function AdminTab() {
         totalPages={userTotalPages}
         onPageChange={setUserPage}
         onBanUser={openBanModal}
-        onUnbanUser={handleUnbanUser}
+        onUnbanUser={(user) => setShowUnbanConfirm({ isOpen: true, user })}
         actionLoading={actionLoading}
         emptyMessage="No users found"
       />
@@ -316,6 +315,20 @@ export default function AdminTab() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmModal
+        isOpen={showUnbanConfirm.isOpen}
+        onClose={() => setShowUnbanConfirm({ isOpen: false, user: null })}
+        onConfirm={() => {
+          if (showUnbanConfirm.user) {
+            handleUnbanUser(showUnbanConfirm.user);
+          }
+        }}
+        title="Unban User"
+        message={`Are you sure you want to unban ${showUnbanConfirm.user?.username}?`}
+        confirmText="Unban User"
+        variant="primary"
+      />
     </div>
   );
 }

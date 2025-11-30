@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { DocumentItem, PaginatedDocumentsResponse } from "../../../../types";
 import Pagination from "../../../../components/Pagination";
-import Modal from "../../../../components/Modal";
+import Modal, { AlertModal } from "../../../../components/Modal";
 
 export default function AdminUserDocumentsPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -37,6 +37,7 @@ export default function AdminUserDocumentsPage({ params }: { params: { id: strin
   
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [errorAlert, setErrorAlert] = useState<{ isOpen: boolean; message: string }>({ isOpen: false, message: "" });
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -105,7 +106,7 @@ export default function AdminUserDocumentsPage({ params }: { params: { id: strin
         await fetchDocuments(page);
       } catch (error) {
         console.error(error);
-        alert("Failed to delete document");
+        setErrorAlert({ isOpen: true, message: "Failed to delete document" });
       } finally {
         setDeletingId(null);
         setConfirmModal({ isOpen: false, docId: null });
@@ -129,7 +130,7 @@ export default function AdminUserDocumentsPage({ params }: { params: { id: strin
         setSelectedIds(new Set());
       } catch (error) {
         console.error(error);
-        alert("Failed to delete documents");
+        setErrorAlert({ isOpen: true, message: "Failed to delete documents" });
       } finally {
         setIsBatchDeleting(false);
         setConfirmModal({ isOpen: false, docId: null });
@@ -298,6 +299,14 @@ export default function AdminUserDocumentsPage({ params }: { params: { id: strin
           </div>
         </div>
       </Modal>
+
+      <AlertModal
+        isOpen={errorAlert.isOpen}
+        onClose={() => setErrorAlert({ isOpen: false, message: "" })}
+        title="Error"
+        message={errorAlert.message}
+        variant="error"
+      />
     </div>
   );
 }
