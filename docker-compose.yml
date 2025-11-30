@@ -5,7 +5,6 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000 
-      - NEXT_PUBLIC_API_URL=http://rag-app:8000
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:6432/${POSTGRES_DB}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
@@ -22,6 +21,7 @@ services:
       - GLOBAL_RATE_LIMIT_RATE=${GLOBAL_RATE_LIMIT_RATE:-10.0}
       - ENVIRONMENT=production
       - EMBEDDING_VECTOR_DIMENSION=${EMBEDDING_VECTOR_DIMENSION:-1024}
+      - NEXT_PUBLIC_API_URL=http://rag-app:8000
     depends_on:
       - pgbouncer
       - redis
