@@ -10,6 +10,9 @@ import {
   Link as LinkIcon,
   ChevronLeft,
   ChevronRight,
+  Code,
+  Copy,
+  Check,
 } from "lucide-react";
 import { SearchResult, PaginatedSearchResponse } from "../types";
 import { AlertModal } from "./Modal";
@@ -29,6 +32,15 @@ export default function SearchTab() {
     message: string;
     variant: "error" | "success" | "info";
   }>({ isOpen: false, title: "", message: "", variant: "info" });
+
+  const [showCurl, setShowCurl] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const performSearch = async (searchQuery: string, page: number) => {
     if (!searchQuery.trim()) return;
@@ -82,6 +94,41 @@ export default function SearchTab() {
       </div>
 
       <div className="max-w-2xl mx-auto">
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={() => setShowCurl(!showCurl)}
+            className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-blue-600 transition-colors bg-slate-100 hover:bg-blue-50 px-3 py-1.5 rounded-full"
+          >
+            <Code className="w-3.5 h-3.5" />
+            {showCurl ? "Hide API" : "API"}
+          </button>
+        </div>
+
+        {showCurl && (
+          <div className="mb-6 bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-lg animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800">
+              <div className="text-xs font-medium text-slate-400">cURL Request</div>
+              <button
+                onClick={() => copyToClipboard(`curl -X GET "${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/search?query=hello" \\
+  -H "Authorization: Bearer rag-xxxxxxxxxxxx"`)}
+                className="text-slate-500 hover:text-white transition-colors"
+                title="Copy to clipboard"
+              >
+                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className="p-4 overflow-x-auto">
+              <pre className="text-sm font-mono text-blue-400 whitespace-pre">
+                <span className="text-purple-400">curl</span> -X GET <span className="text-green-400">"{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/search?query=hello"</span> \{'\n'}
+                {'  '}-H <span className="text-green-400">"Authorization: Bearer rag-xxxxxxxxxxxx"</span>
+              </pre>
+            </div>
+            <div className="px-4 py-3 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-500">
+              Replace <span className="font-mono text-slate-400">rag-xxxxxxxxxxxx</span> with your API key from the Manage tab.
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSearch} className="relative group">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
             <Search className="h-5 w-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />

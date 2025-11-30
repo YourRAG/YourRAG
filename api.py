@@ -560,7 +560,7 @@ async def delete_document(
 
 
 @app.post("/documents")
-async def add_document(doc: DocumentInput, current_user=Depends(get_current_user)):
+async def add_document(doc: DocumentInput, current_user=Depends(get_chat_user)):
     try:
         group_id = doc.metadata.get("groupId") if doc.metadata else None
         # Remove groupId from metadata to keep it clean, if we store it as a column
@@ -654,7 +654,7 @@ async def search_documents(
     query: str,
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(5, ge=1, le=50, description="Results per page"),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_chat_user),
 ):
     try:
 
@@ -1085,26 +1085,7 @@ async def chat_completions(
                 }
                 yield f"data: {json.dumps(sources_data)}\n\n"
 
-            if not results:
-                no_result_data = {
-                    "id": chat_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": input_data.model,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": {
-                                "content": "I couldn't find any relevant documents to answer your question."
-                            },
-                            "finish_reason": None,
-                        }
-                    ],
-                }
-                yield f"data: {json.dumps(no_result_data)}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-
+            # Even if no results, let the AI handle it (it will be prompted not to hallucinate)
             async for chunk in llm_service.chat_completion_stream(
                 query=query,
                 contexts=results,

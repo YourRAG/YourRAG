@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Loader2, Plus, Tag, Link as LinkIcon, Split, FileText, CheckCircle2, AlertCircle, Upload } from "lucide-react";
+import { Loader2, Plus, Tag, Link as LinkIcon, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check } from "lucide-react";
 
 export default function AddDocumentTab() {
   const [content, setContent] = useState("");
@@ -10,6 +10,14 @@ export default function AddDocumentTab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [message, setMessage] = useState("");
+  const [showCurl, setShowCurl] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const docCount = content
     .split("--------")
@@ -225,6 +233,57 @@ export default function AddDocumentTab() {
                 {message}
               </div>
             )}
+
+            <div className="pt-6 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowCurl(!showCurl)}
+                className="flex items-center gap-2 text-sm text-slate-500 hover:text-blue-600 transition-colors font-medium"
+              >
+                <Code className="w-4 h-4" />
+                {showCurl ? "Hide API Example" : "Show API Example"}
+              </button>
+
+              {showCurl && (
+                <div className="mt-4 bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-lg animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800">
+                    <div className="text-xs font-medium text-slate-400">cURL Request</div>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(`curl -X POST "${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/documents" \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer rag-xxxxxxxxxxxx" \\
+  -d '{
+    "content": "Your document content here",
+    "metadata": {
+      "category": "example"
+    }
+  }'`)}
+                      className="text-slate-500 hover:text-white transition-colors"
+                      title="Copy to clipboard"
+                    >
+                      {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="p-4 overflow-x-auto">
+                    <pre className="text-sm font-mono text-blue-400 whitespace-pre">
+                      <span className="text-purple-400">curl</span> -X POST <span className="text-green-400">"{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/documents"</span> \{'\n'}
+                      {'  '}-H <span className="text-green-400">"Content-Type: application/json"</span> \{'\n'}
+                      {'  '}-H <span className="text-green-400">"Authorization: Bearer rag-xxxxxxxxxxxx"</span> \{'\n'}
+                      {'  '}-d <span className="text-yellow-400">'{'{'}</span>
+                      {'\n    '}<span className="text-orange-400">"content"</span>: <span className="text-green-400">"Your document content here"</span>,
+                      {'\n    '}<span className="text-orange-400">"metadata"</span>: <span className="text-yellow-400">{'{'}</span>
+                      {'\n      '}<span className="text-orange-400">"category"</span>: <span className="text-green-400">"example"</span>
+                      {'\n    '}<span className="text-yellow-400">{'}'}</span>
+                      {'\n  '}<span className="text-yellow-400">{'}'}'</span>
+                    </pre>
+                  </div>
+                  <div className="px-4 py-3 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-500">
+                    Replace <span className="font-mono text-slate-400">rag-xxxxxxxxxxxx</span> with your API key from the Manage tab.
+                  </div>
+                </div>
+              )}
+            </div>
           </form>
         </div>
       </div>

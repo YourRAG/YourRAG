@@ -41,19 +41,31 @@ class LLMService:
         if not system_prompt:
             system_prompt = "You are a helpful assistant."
 
-        context_text = "\n\n".join([
-            f"[Document {i+1}]\n{ctx['content']}"
-            for i, ctx in enumerate(contexts)
-        ])
-
-        user_content = f"""Please answer the question based on the following context documents.
+        if contexts:
+            context_text = "\n\n".join([
+                f"[Document {i+1}]\n{ctx['content']}"
+                for i, ctx in enumerate(contexts)
+            ])
+            
+            user_content = f"""Please answer the question based on the provided context documents.
 
 Context:
 {context_text}
 
 Question: {query}
 
-Please provide a helpful and accurate answer based on the context above. If the context doesn't contain enough information to answer the question, please say so."""
+Instructions:
+1. Answer the question using ONLY the information from the provided context.
+2. If the context does not contain enough information to answer the question fully, state what is missing or that you cannot answer based on the available information.
+3. Do NOT make up or hallucinate information that is not present in the context."""
+        else:
+            user_content = f"""Question: {query}
+
+Instructions:
+1. No relevant context documents were found for this query.
+2. Please politely inform the user that you couldn't find any relevant information in the knowledge base to answer their question.
+3. Do NOT try to answer the question using your general knowledge, as you must rely strictly on the knowledge base.
+4. Ask the user if they can provide more specific keywords or if they would like to add relevant documents."""
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -65,7 +77,9 @@ Please provide a helpful and accurate answer based on the context above. If the 
     async def list_models(self) -> List[Dict[str, Any]]:
         """List available models from the upstream LLM provider."""
         try:
-            async with httpx.AsyncClient() as client:
+            # Disable proxies for local connections
+            proxies = {"all://": None}
+            async with httpx.AsyncClient(proxies=proxies) as client:
                 response = await client.get(
                     f"{self.api_url.rsplit('/chat/completions', 1)[0]}/models",
                     headers=self.headers,
@@ -105,11 +119,14 @@ Please provide a helpful and accurate answer based on the context above. If the 
         }
 
         try:
+            # Disable proxies for local connections
+            proxies = {"all://": None}
             response = httpx.post(
                 self.api_url,
                 headers=self.headers,
                 json=payload,
-                timeout=120.0
+                timeout=120.0,
+                proxies=proxies
             )
             response.raise_for_status()
             data = response.json()
@@ -146,8 +163,11 @@ Please provide a helpful and accurate answer based on the context above. If the 
             "max_tokens": max_tokens,
             "stream": True
         }
+        
+        # Disable proxies for local connections to prevent "All connection attempts failed" errors
+        proxies = {"all://": None}
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(proxies=proxies) as client:
             async with client.stream(
                 "POST",
                 self.api_url,
