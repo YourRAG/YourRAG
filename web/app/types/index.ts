@@ -65,11 +65,19 @@ export interface RAGMessage {
 }
 
 // Document Management Types
+export interface DocumentGroup {
+  id: number;
+  name: string;
+  createdAt: string;
+  documentCount: number;
+}
+
 export interface DocumentItem {
   id: number;
   content: string;
   metadata: Record<string, unknown>;
   created_at: string;
+  group?: DocumentGroup | null;
 }
 
 export interface PaginatedDocumentsResponse {

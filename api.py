@@ -135,11 +135,19 @@ class RAGResponse(BaseModel):
     sources: List[SearchResult]
 
 
+class DocumentGroup(BaseModel):
+    id: int
+    name: str
+    createdAt: str
+    documentCount: int = 0
+
+
 class DocumentItem(BaseModel):
     id: int
     content: str
     metadata: Dict[str, Any]
     created_at: Optional[str] = None
+    group: Optional[DocumentGroup] = None
 
 
 class PaginatedDocumentsResponse(BaseModel):
@@ -205,6 +213,15 @@ class ApiKeyResponse(BaseModel):
     expiresAt: Optional[datetime]
     lastUsedAt: Optional[datetime]
     isActive: bool
+
+
+class DocumentGroupInput(BaseModel):
+    name: str
+
+
+class GroupAssignInput(BaseModel):
+    doc_ids: List[int]
+    group_id: Optional[int]
 
 
 # =====================
@@ -439,6 +456,7 @@ async def list_documents(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(10, ge=1, le=100, description="Documents per page"),
     user_id: Optional[int] = Query(None, description="Filter by user ID (Admin only)"),
+    group_id: Optional[int] = Query(None, description="Filter by group ID"),
     current_user=Depends(get_current_user),
 ):
     """Get paginated list of user's documents."""
@@ -451,7 +469,7 @@ async def list_documents(
 
         offset = (page - 1) * page_size
         documents, total = await store.get_documents(
-            user_id=target_user_id, limit=page_size, offset=offset
+            user_id=target_user_id, limit=page_size, offset=offset, group_id=group_id
         )
         total_pages = (total + page_size - 1) // page_size if total > 0 else 0
 
@@ -544,14 +562,89 @@ async def delete_document(
 @app.post("/documents")
 async def add_document(doc: DocumentInput, current_user=Depends(get_current_user)):
     try:
+        group_id = doc.metadata.get("groupId") if doc.metadata else None
+        # Remove groupId from metadata to keep it clean, if we store it as a column
+        if group_id and doc.metadata:
+             # Ensure groupId is an int if present
+            try:
+                group_id = int(group_id)
+            except (ValueError, TypeError):
+                group_id = None
+            doc.metadata.pop("groupId", None)
+            
         doc_id = await store.add_document(
-            user_id=current_user.id, content=doc.content, metadata=doc.metadata
+            user_id=current_user.id, content=doc.content, metadata=doc.metadata, group_id=group_id
         )
 
         # Record activity
         await record_document_add(prisma, current_user.id, doc_id, doc.content[:50])
 
         return {"id": doc_id, "message": "Document added successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# Document Group Routes
+# =====================
+
+@app.get("/groups", response_model=List[DocumentGroup])
+async def list_groups(current_user=Depends(get_current_user)):
+    """Get all document groups for the current user."""
+    try:
+        return await store.get_groups(user_id=current_user.id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/groups", response_model=DocumentGroup)
+async def create_group(group: DocumentGroupInput, current_user=Depends(get_current_user)):
+    """Create a new document group."""
+    try:
+        return await store.create_group(user_id=current_user.id, name=group.name)
+    except Exception as e:
+        # Check for unique constraint violation (name + user)
+        if "Unique constraint failed" in str(e):
+             raise HTTPException(status_code=400, detail="Group with this name already exists")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/groups/{group_id}", response_model=DocumentGroup)
+async def update_group(group_id: int, group: DocumentGroupInput, current_user=Depends(get_current_user)):
+    """Update a document group."""
+    try:
+        result = await store.update_group(user_id=current_user.id, group_id=group_id, name=group.name)
+        if not result:
+            raise HTTPException(status_code=404, detail="Group not found")
+        return result
+    except Exception as e:
+        if "Unique constraint failed" in str(e):
+             raise HTTPException(status_code=400, detail="Group with this name already exists")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/groups/{group_id}")
+async def delete_group(group_id: int, current_user=Depends(get_current_user)):
+    """Delete a document group."""
+    try:
+        success = await store.delete_group(user_id=current_user.id, group_id=group_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Group not found")
+        return {"message": "Group deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/groups/assign")
+async def assign_group(data: GroupAssignInput, current_user=Depends(get_current_user)):
+    """Assign documents to a group."""
+    try:
+        count = await store.assign_documents_to_group(
+            user_id=current_user.id,
+            group_id=data.group_id,
+            doc_ids=data.doc_ids
+        )
+        return {"message": f"Successfully assigned {count} documents"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

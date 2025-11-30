@@ -28,6 +28,7 @@ model User {
   updatedAt           DateTime   @updatedAt
   activities          Activity[]
   documents           Document[]
+  documentGroups      DocumentGroup[]
   apiKeys             ApiKey[]
 }
 
@@ -53,9 +54,25 @@ model Document {
   embedding Unsupported("vector")?
   userId    Int
   user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId   Int?
+  group     DocumentGroup?         @relation(fields: [groupId], references: [id], onDelete: SetNull)
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
 
+  @@index([userId])
+  @@index([groupId])
+}
+
+model DocumentGroup {
+  id        Int        @id @default(autoincrement())
+  name      String
+  userId    Int
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents Document[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([userId, name])
   @@index([userId])
 }
 
