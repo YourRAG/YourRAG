@@ -8,6 +8,7 @@ from prisma import Prisma
 from pydantic import BaseModel
 from typing import Optional
 import config
+from config_service import config_service
 
 # Initialize Prisma client
 prisma = Prisma()
@@ -30,15 +31,13 @@ class User(BaseModel):
 
 
 def get_private_key() -> str:
-    """Get private key and handle escaped newlines."""
-    key = config.PRIVATE_KEY or ""
-    return key.replace("\\n", "\n")
+    """Get private key."""
+    return config_service.get_value("PRIVATE_KEY")
 
 
 def get_public_key() -> str:
-    """Get public key and handle escaped newlines."""
-    key = config.PUBLIC_KEY or ""
-    return key.replace("\\n", "\n")
+    """Get public key."""
+    return config_service.get_value("PUBLIC_KEY")
 
 
 async def get_github_user(code: str, redirect_uri: str):

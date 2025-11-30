@@ -1,5 +1,7 @@
 from prisma import Prisma
 from typing import Dict, Any, Optional
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 import config
 
 class ConfigService:
@@ -21,11 +23,66 @@ class ConfigService:
             configs = await prisma.systemconfig.find_many()
             self._config_cache = {item.key: item.value for item in configs}
             
+            # Ensure JWT keys exist after loading config
+            await self._ensure_jwt_keys_internal(prisma)
+            
         except Exception as e:
             print(f"Failed to load system config: {e}")
         finally:
             if prisma.is_connected():
                 await prisma.disconnect()
+
+    async def _ensure_jwt_keys_internal(self, prisma: Prisma):
+        """Internal method to generate keys using existing connection."""
+        if "PRIVATE_KEY" in self._config_cache and "PUBLIC_KEY" in self._config_cache:
+            return
+
+        # Check env vars first
+        if config.PRIVATE_KEY and config.PUBLIC_KEY:
+            return
+
+        print("Generating new RSA keys for JWT...")
+        try:
+            # Generate new keys
+            key = rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=2048,
+            )
+            
+            private_pem = key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            ).decode('utf-8')
+            
+            public_pem = key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ).decode('utf-8')
+            
+            # Store PRIVATE_KEY
+            await prisma.systemconfig.upsert(
+                where={"key": "PRIVATE_KEY"},
+                data={
+                    "create": {"key": "PRIVATE_KEY", "value": private_pem},
+                    "update": {"value": private_pem}
+                }
+            )
+            self._config_cache["PRIVATE_KEY"] = private_pem
+            
+            # Store PUBLIC_KEY
+            await prisma.systemconfig.upsert(
+                where={"key": "PUBLIC_KEY"},
+                data={
+                    "create": {"key": "PUBLIC_KEY", "value": public_pem},
+                    "update": {"value": public_pem}
+                }
+            )
+            self._config_cache["PUBLIC_KEY"] = public_pem
+            
+            print("RSA keys generated and stored in database.")
+        except Exception as e:
+            print(f"Failed to generate/store RSA keys: {e}")
 
     def get_value(self, key: str, default: str = "") -> str:
         """Get configuration value from cache synchronously."""
@@ -44,6 +101,13 @@ class ConfigService:
             "EMBEDDING_VECTOR_DIMENSION": "VECTOR_DIMENSION",
         }
         
+        # Handle JWT keys from config.py specially to handle newlines
+        if key in ["PRIVATE_KEY", "PUBLIC_KEY"]:
+            val = getattr(config, key, None)
+            if val:
+                return val.replace("\\n", "\n")
+            return default
+
         config_key = mapping.get(key, key)
         env_value = getattr(config, config_key, default)
         return str(env_value)
@@ -112,6 +176,8 @@ class ConfigService:
             "LLM_API_KEY": config.LLM_API_KEY,
             "LLM_MODEL_NAME": config.LLM_MODEL_NAME,
             "RAG_SYSTEM_PROMPT": config.RAG_SYSTEM_PROMPT,
+            "PRIVATE_KEY": config.PRIVATE_KEY.replace("\\n", "\n") if config.PRIVATE_KEY else "",
+            "PUBLIC_KEY": config.PUBLIC_KEY.replace("\\n", "\n") if config.PUBLIC_KEY else "",
         }
         
         for key, value in defaults.items():
