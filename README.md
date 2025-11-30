@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://edgeoneimg.cdn.sn/i/692b8a42237f5_1764461122.webp" alt="YourRAG Logo" width="100">
+  <img src="https://edgeoneimg.cdn.sn/i/692b8a42237f5_1764461122.webp" alt="YourRAG Logo" width="150">
   <h1>YourRAG</h1>
   <p>
     <b>Your Personal RAG Knowledge Base / 您的个人 RAG 知识库系统</b>
