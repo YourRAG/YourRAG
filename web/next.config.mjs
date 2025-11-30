@@ -14,7 +14,11 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   compiler: {
-    removeConsole: true,
+    ...(process.env.NODE_ENV === "production" ? { removeConsole: true } : {}),
+  },
+  onDemandEntries: {
+    maxInactiveAge: 60 * 60 * 1000,
+    pagesBufferLength: 5,
   },
   images: {
     remotePatterns: [

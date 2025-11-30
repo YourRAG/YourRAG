@@ -156,7 +156,16 @@ function HomeContent() {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 relative z-10 w-full overflow-x-hidden">
-        {!user && !loading ? (
+        {loading ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="relative">
+              <div className="w-12 h-12 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+              </div>
+            </div>
+          </div>
+        ) : !user ? (
           <div className="flex flex-col items-center justify-center py-6 sm:py-24 text-center space-y-6 sm:space-y-12 animate-fade-in">
             <div className="relative hidden sm:block">
               <div className="absolute -inset-4 bg-blue-500/20 rounded-full blur-xl animate-pulse-slow"></div>
