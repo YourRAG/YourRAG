@@ -231,7 +231,7 @@ export default function AskTab() {
         </div>
 
         {/* API Key Selection */}
-        <div className="space-y-3 mb-6">
+        <div className="space-y-3 mb-6 mt-2">
           <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
             <Key className="w-4 h-4 text-yellow-600" />
             API Key
