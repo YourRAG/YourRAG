@@ -19,7 +19,8 @@ security = HTTPBearer(auto_error=False)
 
 class User(BaseModel):
     id: int
-    githubId: str
+    githubId: Optional[str] = None
+    giteeId: Optional[str] = None
     username: str
     email: Optional[str] = None
     avatarUrl: Optional[str] = None
@@ -69,6 +70,37 @@ async def get_github_user(code: str, redirect_uri: str):
         )
         user_response.raise_for_status()
         return user_response.json()
+
+
+async def get_gitee_user(code: str, redirect_uri: str):
+    async with httpx.AsyncClient() as client:
+        # Exchange code for access token
+        response = await client.post(
+            "https://gitee.com/oauth/token",
+            headers={"Accept": "application/json"},
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "client_id": config.GITEE_CLIENT_ID,
+                "redirect_uri": redirect_uri,
+                "client_secret": config.GITEE_CLIENT_SECRET,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        access_token = data.get("access_token")
+        
+        if not access_token:
+            raise HTTPException(status_code=400, detail="Failed to get access token from Gitee")
+
+        # Get user info
+        user_response = await client.get(
+            "https://gitee.com/api/v5/user",
+            params={"access_token": access_token},
+        )
+        user_response.raise_for_status()
+        return user_response.json()
+
 
 async def get_current_user(
     token: Optional[str] = Depends(cookie_scheme),

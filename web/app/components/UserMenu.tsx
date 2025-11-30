@@ -7,9 +7,10 @@ import { User } from "../types";
 interface UserMenuProps {
   user: User | null;
   loading: boolean;
-  onLogin: () => void;
+  onLogin: (provider?: string) => void;
   onLogout: () => Promise<void>;
   onProfileClick: () => void;
+  providers: string[];
 }
 
 export default function UserMenu({
@@ -18,6 +19,7 @@ export default function UserMenu({
   onLogin,
   onLogout,
   onProfileClick,
+  providers,
 }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -40,14 +42,28 @@ export default function UserMenu({
 
   if (!user) {
     return (
-      <button
-        onClick={onLogin}
-        className="flex items-center gap-2 p-1.5 sm:px-4 sm:py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium"
-        aria-label="Sign in with GitHub"
-      >
-        <Github className="w-4 h-4 sm:w-4 sm:h-4" />
-        <span className="hidden sm:inline">Sign in with GitHub</span>
-      </button>
+      <div className="flex gap-2">
+        {providers.includes("github") && (
+          <button
+            onClick={() => onLogin("github")}
+            className="flex items-center gap-2 p-1.5 sm:px-4 sm:py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium"
+            aria-label="Sign in with GitHub"
+          >
+            <Github className="w-4 h-4 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">GitHub</span>
+          </button>
+        )}
+        {providers.includes("gitee") && (
+          <button
+            onClick={() => onLogin("gitee")}
+            className="flex items-center gap-2 p-1.5 sm:px-4 sm:py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+            aria-label="Sign in with Gitee"
+          >
+            <span className="font-bold w-4 h-4 flex items-center justify-center">G</span>
+            <span className="hidden sm:inline">Gitee</span>
+          </button>
+        )}
+      </div>
     );
   }
 

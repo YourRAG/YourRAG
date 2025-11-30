@@ -13,7 +13,8 @@ generator client {
 
 model User {
   id                  Int        @id @default(autoincrement())
-  githubId            String     @unique
+  githubId            String?    @unique
+  giteeId             String?    @unique
   username            String
   email               String?
   avatarUrl           String?

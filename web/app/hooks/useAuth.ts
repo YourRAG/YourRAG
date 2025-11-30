@@ -11,15 +11,29 @@ export interface BanInfo {
 }
 
 export function useAuth(): AuthState & {
-  login: () => void;
+  login: (provider?: string) => void;
   logout: () => Promise<void>;
   refetch: () => Promise<void>;
   banInfo: BanInfo | null;
   clearBanInfo: () => void;
+  providers: string[];
 } {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [banInfo, setBanInfo] = useState<BanInfo | null>(null);
+  const [providers, setProviders] = useState<string[]>([]);
+
+  const fetchProviders = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/auth/providers`);
+      if (response.ok) {
+        const data = await response.json();
+        setProviders(data.providers);
+      }
+    } catch (error) {
+      console.error("Failed to fetch auth providers:", error);
+    }
+  }, []);
 
   const fetchUser = useCallback(async () => {
     try {
@@ -50,10 +64,11 @@ export function useAuth(): AuthState & {
 
   useEffect(() => {
     fetchUser();
-  }, [fetchUser]);
+    fetchProviders();
+  }, [fetchUser, fetchProviders]);
 
-  const login = () => {
-    window.location.href = `${API_URL}/auth/github`;
+  const login = (provider: string = "github") => {
+    window.location.href = `${API_URL}/auth/${provider}`;
   };
 
   const logout = async () => {
@@ -81,5 +96,6 @@ export function useAuth(): AuthState & {
     refetch: fetchUser,
     banInfo,
     clearBanInfo,
+    providers,
   };
 }

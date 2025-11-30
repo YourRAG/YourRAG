@@ -4,7 +4,8 @@ export type Role = "USER" | "ADMIN";
 
 export interface User {
   id: number;
-  githubId: string;
+  githubId?: string;
+  giteeId?: string;
   username: string;
   email: string | null;
   avatarUrl: string | null;

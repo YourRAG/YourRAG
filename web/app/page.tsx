@@ -16,7 +16,7 @@ import { useAuth } from "./hooks/useAuth";
 function HomeContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>("ask");
-  const { user, loading, login, logout, banInfo, clearBanInfo, refetch } = useAuth();
+  const { user, loading, login, logout, banInfo, clearBanInfo, refetch, providers } = useAuth();
   const [showBanModal, setShowBanModal] = useState(false);
 
   useEffect(() => {
@@ -137,6 +137,7 @@ function HomeContent() {
               onLogin={login}
               onLogout={logout}
               onProfileClick={() => setActiveTab("profile")}
+              providers={providers}
             />
           </div>
         </div>
@@ -188,17 +189,29 @@ function HomeContent() {
               </div>
             </div>
 
-            <div className="pt-4 sm:pt-8 animate-slide-up">
-              <button
-                onClick={login}
-                className="group relative inline-flex items-center gap-3 px-6 py-3 sm:px-8 sm:py-4 bg-slate-900 text-white rounded-xl sm:rounded-2xl hover:bg-slate-800 transition-all shadow-xl hover:shadow-2xl hover:shadow-slate-900/20 font-medium text-base sm:text-lg overflow-hidden"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <Github className="w-5 h-5 sm:w-6 sm:h-6 relative z-10" />
-                <span className="relative z-10">Sign in with GitHub</span>
-              </button>
-              <p className="mt-3 sm:mt-4 text-xs sm:text-sm text-slate-500">Secure access powered by GitHub OAuth</p>
+            <div className="pt-4 sm:pt-8 animate-slide-up flex flex-col sm:flex-row gap-4 justify-center">
+              {providers.includes("github") && (
+                <button
+                  onClick={() => login("github")}
+                  className="group relative inline-flex items-center gap-3 px-6 py-3 sm:px-8 sm:py-4 bg-slate-900 text-white rounded-xl sm:rounded-2xl hover:bg-slate-800 transition-all shadow-xl hover:shadow-2xl hover:shadow-slate-900/20 font-medium text-base sm:text-lg overflow-hidden"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <Github className="w-5 h-5 sm:w-6 sm:h-6 relative z-10" />
+                  <span className="relative z-10">Sign in with GitHub</span>
+                </button>
+              )}
+              {providers.includes("gitee") && (
+                <button
+                  onClick={() => login("gitee")}
+                  className="group relative inline-flex items-center gap-3 px-6 py-3 sm:px-8 sm:py-4 bg-red-600 text-white rounded-xl sm:rounded-2xl hover:bg-red-700 transition-all shadow-xl hover:shadow-2xl hover:shadow-red-600/20 font-medium text-base sm:text-lg overflow-hidden"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-orange-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <span className="relative z-10 font-bold">G</span>
+                  <span className="relative z-10">Sign in with Gitee</span>
+                </button>
+              )}
             </div>
+            <p className="mt-3 sm:mt-4 text-xs sm:text-sm text-slate-500">Secure access powered by OAuth</p>
           </div>
         ) : (
           <div className="animate-fade-in">

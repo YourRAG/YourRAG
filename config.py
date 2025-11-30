@@ -29,6 +29,10 @@ DATABASE_PATH = os.environ.get("DATABASE_PATH", "documents.db")
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET")
 
+# Gitee OAuth Configuration
+GITEE_CLIENT_ID = os.environ.get("GITEE_CLIENT_ID")
+GITEE_CLIENT_SECRET = os.environ.get("GITEE_CLIENT_SECRET")
+
 # JWT Configuration
 PRIVATE_KEY = os.environ.get("PRIVATE_KEY")
 PUBLIC_KEY = os.environ.get("PUBLIC_KEY")

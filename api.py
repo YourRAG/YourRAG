@@ -8,6 +8,7 @@ from document_store import DocumentStore
 from llm_service import LLMService
 from auth import (
     get_github_user,
+    get_gitee_user,
     create_access_token,
     get_current_user,
     get_current_user_optional,
@@ -75,6 +76,8 @@ llm_service = LLMService()
 
 # GitHub OAuth callback URL
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+# Gitee OAuth callback URL
+GITEE_AUTHORIZE_URL = "https://gitee.com/oauth/authorize"
 
 
 class DocumentInput(BaseModel):
@@ -149,7 +152,8 @@ class PaginatedDocumentsResponse(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    githubId: str
+    githubId: Optional[str] = None
+    giteeId: Optional[str] = None
     username: str
     email: Optional[str] = None
     avatarUrl: Optional[str] = None
@@ -206,6 +210,17 @@ class ApiKeyResponse(BaseModel):
 # =====================
 # Auth Routes
 # =====================
+
+
+@app.get("/auth/providers")
+async def get_auth_providers():
+    """Get available authentication providers."""
+    providers = []
+    if config.GITHUB_CLIENT_ID and config.GITHUB_CLIENT_SECRET:
+        providers.append("github")
+    if config.GITEE_CLIENT_ID and config.GITEE_CLIENT_SECRET:
+        providers.append("gitee")
+    return {"providers": providers}
 
 
 @app.get("/auth/github")
@@ -275,12 +290,80 @@ async def github_callback(code: str, request: Request, response: Response):
         )
 
 
+@app.get("/auth/gitee")
+async def gitee_login(request: Request):
+    """Redirect to Gitee OAuth login."""
+    callback_url = str(request.url_for("gitee_callback"))
+    redirect_uri = f"{GITEE_AUTHORIZE_URL}?client_id={config.GITEE_CLIENT_ID}&response_type=code&redirect_uri={callback_url}"
+    return RedirectResponse(url=redirect_uri)
+
+
+@app.get("/auth/gitee/callback")
+async def gitee_callback(code: str, request: Request, response: Response):
+    """Handle Gitee OAuth callback."""
+    try:
+        callback_url = str(request.url_for("gitee_callback"))
+        gitee_user = await get_gitee_user(code, callback_url)
+
+        # Find or create user
+        user = await prisma.user.find_unique(where={"giteeId": str(gitee_user["id"])})
+
+        if not user:
+            # Check if this is the first user
+            user_count = await prisma.user.count()
+            role = "ADMIN" if user_count == 0 else "USER"
+
+            user = await prisma.user.create(
+                data={
+                    "giteeId": str(gitee_user["id"]),
+                    "username": gitee_user["login"],
+                    "email": gitee_user.get("email"),
+                    "avatarUrl": gitee_user.get("avatar_url"),
+                    "role": role,
+                }
+            )
+
+        # Create JWT token
+        token = create_access_token(data={"sub": str(user.id)})
+
+        # Record login activity
+        await record_login(prisma, user.id)
+
+        # Set cookie and redirect to frontend
+        response = RedirectResponse(url=config.FRONTEND_URL, status_code=302)
+        response.set_cookie(
+            key="token",
+            value=token,
+            httponly=True,
+            secure=False,  # Set to True in production with HTTPS
+            samesite="lax",
+            max_age=60 * 60 * 24 * 7,  # 7 days
+        )
+
+        return response
+
+    except Exception as e:
+        import traceback
+
+        error_msg = str(e) if str(e) else "Login failed"
+        print(f"OAuth callback error: {error_msg}")
+        print(traceback.format_exc())
+        # Redirect to frontend with error parameter
+        from urllib.parse import urlencode
+
+        error_params = urlencode({"error": error_msg})
+        return RedirectResponse(
+            url=f"{config.FRONTEND_URL}?{error_params}", status_code=302
+        )
+
+
 @app.get("/auth/me", response_model=UserResponse)
 async def get_me(current_user=Depends(get_current_user)):
     """Get current authenticated user."""
     return UserResponse(
         id=current_user.id,
         githubId=current_user.githubId,
+        giteeId=current_user.giteeId,
         username=current_user.username,
         email=current_user.email,
         avatarUrl=current_user.avatarUrl,
@@ -344,13 +427,20 @@ async def get_user_stats(current_user=Depends(get_current_user)):
 async def list_documents(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(10, ge=1, le=100, description="Documents per page"),
+    user_id: Optional[int] = Query(None, description="Filter by user ID (Admin only)"),
     current_user=Depends(get_current_user),
 ):
     """Get paginated list of user's documents."""
     try:
+        target_user_id = current_user.id
+        if user_id is not None:
+            if current_user.role != "ADMIN":
+                raise HTTPException(status_code=403, detail="Permission denied")
+            target_user_id = user_id
+
         offset = (page - 1) * page_size
         documents, total = await store.get_documents(
-            user_id=current_user.id, limit=page_size, offset=offset
+            user_id=target_user_id, limit=page_size, offset=offset
         )
         total_pages = (total + page_size - 1) // page_size if total > 0 else 0
 
@@ -361,25 +451,37 @@ async def list_documents(
             page_size=page_size,
             total_pages=total_pages,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/documents/batch")
 async def delete_documents_batch(
-    data: BatchDeleteInput, current_user=Depends(get_current_user)
+    data: BatchDeleteInput,
+    user_id: Optional[int] = Query(None, description="Target user ID (Admin only)"),
+    current_user=Depends(get_current_user)
 ):
     """Batch delete documents."""
     try:
-        count = await store.delete_documents(user_id=current_user.id, doc_ids=data.ids)
+        target_user_id = current_user.id
+        if user_id is not None:
+            if current_user.role != "ADMIN":
+                raise HTTPException(status_code=403, detail="Permission denied")
+            target_user_id = user_id
+
+        count = await store.delete_documents(user_id=target_user_id, doc_ids=data.ids)
 
         if count > 0:
             # Record activity (just record one generic activity for the batch)
             await record_document_delete(
-                prisma, current_user.id, 0
+                prisma, target_user_id, 0
             )  # 0 indicates batch/unknown
 
         return {"message": f"Successfully deleted {count} documents"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -399,17 +501,27 @@ async def get_document(doc_id: int, current_user=Depends(get_current_user)):
 
 
 @app.delete("/documents/{doc_id}")
-async def delete_document(doc_id: int, current_user=Depends(get_current_user)):
+async def delete_document(
+    doc_id: int,
+    user_id: Optional[int] = Query(None, description="Target user ID (Admin only)"),
+    current_user=Depends(get_current_user)
+):
     """Delete a document by ID."""
     try:
-        deleted = await store.delete_document(user_id=current_user.id, doc_id=doc_id)
+        target_user_id = current_user.id
+        if user_id is not None:
+            if current_user.role != "ADMIN":
+                raise HTTPException(status_code=403, detail="Permission denied")
+            target_user_id = user_id
+
+        deleted = await store.delete_document(user_id=target_user_id, doc_id=doc_id)
         if not deleted:
             raise HTTPException(
                 status_code=404, detail="Document not found or permission denied"
             )
 
         # Record activity
-        await record_document_delete(prisma, current_user.id, doc_id)
+        await record_document_delete(prisma, target_user_id, doc_id)
 
         return {"message": "Document deleted successfully"}
     except HTTPException:
@@ -549,6 +661,7 @@ async def get_users(
     page: int = 1,
     page_size: int = 10,
     search: Optional[str] = None,
+    role: Optional[str] = None,
     current_user=Depends(get_current_user)
 ):
     """Get paginated users list."""
@@ -563,6 +676,9 @@ async def get_users(
                 {"username": {"contains": search, "mode": "insensitive"}},
                 {"email": {"contains": search, "mode": "insensitive"}},
             ]
+        
+        if role:
+            where["role"] = role
             
         users = await prisma.user.find_many(
             where=where,
