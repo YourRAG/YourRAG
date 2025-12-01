@@ -282,6 +282,17 @@ async def github_callback(code: str, request: Request, response: Response):
                 }
             )
 
+        # Check if user is banned - prevent login for banned users
+        if user.banned:
+            from urllib.parse import urlencode
+            error_params = urlencode({
+                "error": "banned",
+                "reason": user.banReason or "Your account has been banned"
+            })
+            return RedirectResponse(
+                url=f"{config.FRONTEND_URL}?{error_params}", status_code=302
+            )
+
         # Create JWT token
         token = create_access_token(data={"sub": str(user.id)})
 
@@ -347,6 +358,17 @@ async def gitee_callback(code: str, request: Request, response: Response):
                     "avatarUrl": gitee_user.get("avatar_url"),
                     "role": role,
                 }
+            )
+
+        # Check if user is banned - prevent login for banned users
+        if user.banned:
+            from urllib.parse import urlencode
+            error_params = urlencode({
+                "error": "banned",
+                "reason": user.banReason or "Your account has been banned"
+            })
+            return RedirectResponse(
+                url=f"{config.FRONTEND_URL}?{error_params}", status_code=302
             )
 
         # Create JWT token
@@ -860,6 +882,16 @@ async def get_active_instances():
     except Exception as e:
         # If Redis is not available, return empty list
         return {"count": 0, "instances": []}
+
+
+@app.get("/system/config")
+async def get_public_config():
+    """Get public system configurations (no authentication required)."""
+    try:
+        configs = await config_service.get_public_configs()
+        return configs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/admin/config")

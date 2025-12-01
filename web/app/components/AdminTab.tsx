@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { 
-  Users, 
-  FileText, 
-  Activity, 
-  Search, 
-  Shield, 
+import {
+  Users,
+  FileText,
+  Activity,
+  Search,
+  Shield,
+  Settings,
+  Loader2,
 } from "lucide-react";
 import { User } from "../types";
 import Modal, { ConfirmModal } from "./Modal";
@@ -24,6 +26,11 @@ interface UsersResponse {
   page: number;
   page_size: number;
   total_pages: number;
+}
+
+interface SystemConfig {
+  ENABLE_ACTIVITY_TRACKING?: string;
+  [key: string]: string | undefined;
 }
 
 export default function AdminTab() {
@@ -48,6 +55,11 @@ export default function AdminTab() {
   const [showUnbanConfirm, setShowUnbanConfirm] = useState<{ isOpen: boolean; user: AdminUser | null }>({ isOpen: false, user: null });
   const [actionLoading, setActionLoading] = useState(false);
 
+  // System config state
+  const [systemConfig, setSystemConfig] = useState<SystemConfig>({});
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configSaving, setConfigSaving] = useState(false);
+
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
   const fetchStats = useCallback(async () => {
@@ -61,6 +73,45 @@ export default function AdminTab() {
       console.error("Failed to fetch stats:", error);
     }
   }, [API_URL]);
+
+  const fetchConfig = useCallback(async () => {
+    setConfigLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/config`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setSystemConfig(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch config:", error);
+    } finally {
+      setConfigLoading(false);
+    }
+  }, [API_URL]);
+
+  const updateConfig = useCallback(async (key: string, value: string) => {
+    setConfigSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ configs: { [key]: value } }),
+        credentials: "include"
+      });
+      if (res.ok) {
+        setSystemConfig(prev => ({ ...prev, [key]: value }));
+      }
+    } catch (error) {
+      console.error("Failed to update config:", error);
+    } finally {
+      setConfigSaving(false);
+    }
+  }, [API_URL]);
+
+  const handleActivityTrackingToggle = () => {
+    const currentValue = systemConfig.ENABLE_ACTIVITY_TRACKING === "true";
+    updateConfig("ENABLE_ACTIVITY_TRACKING", (!currentValue).toString());
+  };
 
   const fetchAdmins = useCallback(async () => {
     setAdminsLoading(true);
@@ -115,8 +166,8 @@ export default function AdminTab() {
   }, [API_URL, userPage, search]);
 
   const loadData = useCallback(async () => {
-    await Promise.all([fetchStats(), fetchAdmins(), fetchUsers()]);
-  }, [fetchStats, fetchAdmins, fetchUsers]);
+    await Promise.all([fetchStats(), fetchAdmins(), fetchUsers(), fetchConfig()]);
+  }, [fetchStats, fetchAdmins, fetchUsers, fetchConfig]);
 
   useEffect(() => {
     loadData();
@@ -223,6 +274,47 @@ export default function AdminTab() {
                 {stats?.totalActivities || 0}
               </h3>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* System Settings */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex items-center gap-3">
+          <Settings className="w-5 h-5 text-slate-600" />
+          <h3 className="font-semibold text-slate-900">System Settings</h3>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-slate-900">Activity Tracking</p>
+              <p className="text-sm text-slate-500">
+                Enable or disable user activity tracking (Recent Activity feature)
+              </p>
+            </div>
+            <button
+              onClick={handleActivityTrackingToggle}
+              disabled={configLoading || configSaving}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                systemConfig.ENABLE_ACTIVITY_TRACKING === "true"
+                  ? "bg-blue-600"
+                  : "bg-slate-200"
+              } ${(configLoading || configSaving) ? "opacity-50 cursor-not-allowed" : ""}`}
+            >
+              {configSaving ? (
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <Loader2 className="w-3 h-3 animate-spin text-white" />
+                </span>
+              ) : (
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    systemConfig.ENABLE_ACTIVITY_TRACKING === "true"
+                      ? "translate-x-6"
+                      : "translate-x-1"
+                  }`}
+                />
+              )}
+            </button>
           </div>
         </div>
       </div>

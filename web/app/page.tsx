@@ -20,6 +20,9 @@ function HomeContent() {
   const [activeTab, setActiveTab] = useState<TabType>("ask");
   const { user, loading, login, logout, banInfo, clearBanInfo, refetch, providers } = useAuth();
   const [showBanModal, setShowBanModal] = useState(false);
+  const [activityEnabled, setActivityEnabled] = useState(true);
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -27,6 +30,22 @@ function HomeContent() {
       setActiveTab(tab as TabType);
     }
   }, [searchParams]);
+
+  // Fetch public system config for activity tracking status
+  useEffect(() => {
+    const fetchPublicConfig = async () => {
+      try {
+        const res = await fetch(`${API_URL}/system/config`);
+        if (res.ok) {
+          const data = await res.json();
+          setActivityEnabled(data.ENABLE_ACTIVITY_TRACKING === "true");
+        }
+      } catch (error) {
+        console.error("Failed to fetch public config:", error);
+      }
+    };
+    fetchPublicConfig();
+  }, [API_URL]);
 
   // Show ban modal when banInfo is set and redirect away from profile
   useEffect(() => {
@@ -117,17 +136,19 @@ function HomeContent() {
                   <List className="w-4 h-4" />
                   <span className="hidden sm:inline">Manage</span>
                 </button>
-                <button
-                  onClick={() => setActiveTab("activity")}
-                  className={`p-1.5 sm:px-4 sm:py-1.5 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
-                    activeTab === "activity"
-                      ? "bg-white text-blue-600 shadow-sm ring-1 ring-black/5"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
-                  }`}
-                >
-                  <Activity className="w-4 h-4" />
-                  <span className="hidden sm:inline">Activity</span>
-                </button>
+                {activityEnabled && (
+                  <button
+                    onClick={() => setActiveTab("activity")}
+                    className={`p-1.5 sm:px-4 sm:py-1.5 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                      activeTab === "activity"
+                        ? "bg-white text-blue-600 shadow-sm ring-1 ring-black/5"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+                    }`}
+                  >
+                    <Activity className="w-4 h-4" />
+                    <span className="hidden sm:inline">Activity</span>
+                  </button>
+                )}
                 {user.role === "ADMIN" && (
                   <button
                     onClick={() => setActiveTab("admin")}
@@ -242,7 +263,7 @@ function HomeContent() {
             {activeTab === "search" && <SearchTab />}
             {activeTab === "add" && <AddDocumentTab />}
             {activeTab === "manage" && <ManageTab />}
-            {activeTab === "activity" && <RecentActivityTab />}
+            {activeTab === "activity" && activityEnabled && <RecentActivityTab />}
             {activeTab === "profile" && <ProfileTab user={user} onUnauthorized={handleUnauthorized} onUpdate={refetch} />}
             {activeTab === "admin" && user.role === "ADMIN" && <AdminTab />}
             {activeTab === "demo" && <DemoTab />}

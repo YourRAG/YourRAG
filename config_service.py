@@ -178,6 +178,7 @@ class ConfigService:
             "RAG_SYSTEM_PROMPT": config.RAG_SYSTEM_PROMPT,
             "PRIVATE_KEY": config.PRIVATE_KEY.replace("\\n", "\n") if config.PRIVATE_KEY else "",
             "PUBLIC_KEY": config.PUBLIC_KEY.replace("\\n", "\n") if config.PUBLIC_KEY else "",
+            "ENABLE_ACTIVITY_TRACKING": "true",  # Default: Activity tracking is enabled
         }
         
         for key, value in defaults.items():
@@ -185,6 +186,29 @@ class ConfigService:
                 result[key] = str(value)
                 
         return result
+
+    async def get_public_configs(self) -> Dict[str, str]:
+        """Get public configurations that can be exposed to frontend."""
+        # Ensure cache is populated
+        if not self._config_cache:
+            await self.load_config()
+            
+        # Only return non-sensitive configs
+        public_keys = ["ENABLE_ACTIVITY_TRACKING"]
+        
+        result = {}
+        for key in public_keys:
+            if key in self._config_cache:
+                result[key] = self._config_cache[key]
+            elif key == "ENABLE_ACTIVITY_TRACKING":
+                result[key] = "true"  # Default value
+                
+        return result
+
+    def is_activity_tracking_enabled(self) -> bool:
+        """Check if activity tracking is enabled."""
+        value = self._config_cache.get("ENABLE_ACTIVITY_TRACKING", "true")
+        return value.lower() == "true"
 
 # Global instance
 config_service = ConfigService()

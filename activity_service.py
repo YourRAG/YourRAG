@@ -4,6 +4,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from prisma import Prisma
 from enum import Enum
+from config_service import config_service
 
 
 class ActivityType(str, Enum):
@@ -41,6 +42,10 @@ class ActivityService:
             description: 活动描述
             metadata: 额外元数据
         """
+        # Check if activity tracking is enabled
+        if not config_service.is_activity_tracking_enabled():
+            return
+            
         try:
             import json
             await self.prisma.activity.create(
