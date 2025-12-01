@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon } from "lucide-react";
+import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon, FileUp } from "lucide-react";
 
 interface DocumentGroup {
   id: number;
@@ -14,7 +14,9 @@ export default function AddDocumentTab() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const docFileInputRef = useRef<HTMLInputElement>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
   const [message, setMessage] = useState("");
   const [showCurl, setShowCurl] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -84,6 +86,48 @@ export default function AddDocumentTab() {
     };
     reader.readAsText(file);
     e.target.value = "";
+  };
+
+  const handleDocumentFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsParsing(true);
+    setMessage("Parsing document...");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/documents/parse`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || "Failed to parse document");
+      }
+
+      const data = await res.json();
+      
+      if (data.content) {
+        setContent((prev) => {
+          const separator = "\n\n--------\n\n";
+          return prev.trim() ? prev + separator + data.content : data.content;
+        });
+        setMessage(`${file.name} imported successfully! (${data.contentLength} chars)`);
+        setTimeout(() => setMessage(""), 3000);
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage(error instanceof Error ? `Error: ${error.message}` : "Error parsing document");
+      setTimeout(() => setMessage(""), 5000);
+    } finally {
+      setIsParsing(false);
+      e.target.value = "";
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -325,7 +369,28 @@ export default function AddDocumentTab() {
                 <div className="flex items-center gap-2">
                   <input
                     type="file"
-                    accept=".md,.markdown"
+                    accept=".pdf,.docx"
+                    ref={docFileInputRef}
+                    className="hidden"
+                    onChange={handleDocumentFileUpload}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => docFileInputRef.current?.click()}
+                    disabled={isParsing}
+                    className="text-xs flex items-center gap-1.5 text-purple-600 hover:text-purple-700 font-medium px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Import content from PDF or Word document"
+                  >
+                    {isParsing ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <FileUp className="w-3 h-3" />
+                    )}
+                    {isParsing ? "Parsing..." : "Import PDF/Word"}
+                  </button>
+                  <input
+                    type="file"
+                    accept=".md,.markdown,.txt"
                     ref={fileInputRef}
                     className="hidden"
                     onChange={handleFileUpload}
@@ -334,10 +399,10 @@ export default function AddDocumentTab() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="text-xs flex items-center gap-1.5 text-slate-600 hover:text-slate-700 font-medium px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors"
-                    title="Import content from a Markdown file"
+                    title="Import content from a Markdown or text file"
                   >
                     <Upload className="w-3 h-3" />
-                    Import MD
+                    Import MD/TXT
                   </button>
                   <button
                     type="button"

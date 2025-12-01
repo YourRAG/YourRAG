@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, Depends, Response, Request
+from fastapi import FastAPI, HTTPException, Query, Depends, Response, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from document_store import DocumentStore
 from llm_service import LLMService
+from file_parser import FileParser, FileParseError
 from auth import (
     get_github_user,
     get_gitee_user,
@@ -631,6 +632,178 @@ async def add_document(doc: DocumentInput, current_user=Depends(get_chat_user)):
         return {"id": doc_id, "message": "Document added successfully", "groupId": group_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Maximum file size: 50MB
+MAX_FILE_SIZE = 50 * 1024 * 1024
+
+
+@app.post("/documents/parse")
+async def parse_document(
+    file: UploadFile = File(...),
+    current_user=Depends(get_chat_user)
+):
+    """
+    Parse a document file and return extracted text content.
+    This endpoint only extracts text without storing the document.
+    
+    Supported formats:
+    - PDF (.pdf): Text extraction using PyMuPDF
+    - Word (.docx): Text extraction using python-docx
+    - Text (.txt, .md, .markdown): Direct text import
+    
+    Returns the extracted text that can be appended to the input field.
+    """
+    try:
+        # Validate file type
+        filename = file.filename or "unknown"
+        if not FileParser.is_supported(filename):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type. Supported: {', '.join(sorted(FileParser.SUPPORTED_EXTENSIONS))}"
+            )
+        
+        # Read file content
+        file_bytes = await file.read()
+        
+        # Check file size
+        if len(file_bytes) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB"
+            )
+        
+        # Check if file is empty
+        if len(file_bytes) == 0:
+            raise HTTPException(status_code=400, detail="File is empty")
+        
+        # Parse file and extract text
+        try:
+            content = FileParser.parse_file(filename, file_bytes)
+        except FileParseError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Validate extracted content
+        if not content or not content.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="No text content could be extracted from the file"
+            )
+        
+        return {
+            "content": content,
+            "filename": filename,
+            "fileType": filename.rsplit('.', 1)[-1].lower() if '.' in filename else "unknown",
+            "contentLength": len(content)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse file: {str(e)}")
+
+
+@app.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    group_id: Optional[int] = Form(None),
+    group_name: Optional[str] = Form(None),
+    category: Optional[str] = Form(None),
+    source: Optional[str] = Form(None),
+    current_user=Depends(get_chat_user)
+):
+    """
+    Upload a document file (PDF, DOCX, TXT, MD) and extract text content.
+    
+    Supported formats:
+    - PDF (.pdf): Text extraction using PyMuPDF
+    - Word (.docx): Text extraction using python-docx
+    - Text (.txt, .md, .markdown): Direct text import
+    
+    The extracted text will be stored as a document with optional metadata.
+    """
+    try:
+        # Validate file type
+        filename = file.filename or "unknown"
+        if not FileParser.is_supported(filename):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type. Supported: {', '.join(sorted(FileParser.SUPPORTED_EXTENSIONS))}"
+            )
+        
+        # Read file content
+        file_bytes = await file.read()
+        
+        # Check file size
+        if len(file_bytes) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB"
+            )
+        
+        # Check if file is empty
+        if len(file_bytes) == 0:
+            raise HTTPException(status_code=400, detail="File is empty")
+        
+        # Parse file and extract text
+        try:
+            content = FileParser.parse_file(filename, file_bytes)
+        except FileParseError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Validate extracted content
+        if not content or not content.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="No text content could be extracted from the file"
+            )
+        
+        # Build metadata
+        metadata = {
+            "originalFilename": filename,
+            "fileType": filename.rsplit('.', 1)[-1].lower() if '.' in filename else "unknown",
+            "fileSize": len(file_bytes),
+        }
+        
+        if category and category.strip():
+            metadata["category"] = category.strip()
+        if source and source.strip():
+            metadata["source"] = source.strip()
+        
+        # Handle group assignment
+        resolved_group_id = None
+        
+        if group_id is not None:
+            resolved_group_id = group_id
+        elif group_name and group_name.strip():
+            resolved_group_id = await store.find_or_create_group(
+                user_id=current_user.id,
+                name=group_name.strip()
+            )
+        
+        # Store document
+        doc_id = await store.add_document(
+            user_id=current_user.id,
+            content=content,
+            metadata=metadata,
+            group_id=resolved_group_id
+        )
+        
+        # Record activity
+        await record_document_add(prisma, current_user.id, doc_id, content[:50])
+        
+        return {
+            "id": doc_id,
+            "message": "Document uploaded and processed successfully",
+            "filename": filename,
+            "contentLength": len(content),
+            "groupId": resolved_group_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
 
 
 # =====================
