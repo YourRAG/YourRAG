@@ -1180,6 +1180,29 @@ async def chat_completions(
         )
         system_prompt = system_message.content if system_message else None
 
+        # Parse model field to extract actual model name and optional group name
+        # Format: "model-name" or "model-name-Group Name"
+        # Rule: Find the last "-", the part after it is the group name
+        actual_model = input_data.model or "default"
+        group_id_for_search = None
+        
+        if actual_model and actual_model != "default":
+            last_dash_idx = actual_model.rfind("-")
+            if last_dash_idx > 0:  # Must have at least one char before the dash
+                potential_group_name = actual_model[last_dash_idx + 1:]
+                potential_model_name = actual_model[:last_dash_idx]
+                
+                if potential_group_name:  # Group name is not empty
+                    # Try to find the group by name
+                    group = await prisma.documentgroup.find_first(
+                        where={"userId": current_user.id, "name": potential_group_name}
+                    )
+                    if group:
+                        # Group exists, use it for filtering
+                        group_id_for_search = group.id
+                        actual_model = potential_model_name
+                    # If group doesn't exist, keep the original model name and search all docs
+
         # Construct conversation history for context
         # We'll use the last few messages to build context if needed,
         # but for RAG search we primarily use the latest query.
@@ -1220,6 +1243,7 @@ async def chat_completions(
             query=search_query,
             threshold=distance_threshold,
             limit=top_k,
+            group_id=group_id_for_search,
         )
 
         # Record activity
@@ -1235,7 +1259,7 @@ async def chat_completions(
                     "id": chat_id,
                     "object": "chat.completion.chunk",
                     "created": created,
-                    "model": input_data.model,
+                    "model": actual_model,
                     "choices": [
                         {
                             "index": 0,
@@ -1255,7 +1279,7 @@ async def chat_completions(
                 history=history_messages,
                 temperature=input_data.temperature,
                 max_tokens=input_data.max_tokens,
-                model=input_data.model,
+                model=actual_model,
             ):
                 # Build delta with content and/or reasoning_content
                 delta = {}
@@ -1268,7 +1292,7 @@ async def chat_completions(
                     "id": chat_id,
                     "object": "chat.completion.chunk",
                     "created": created,
-                    "model": input_data.model,
+                    "model": actual_model,
                     "choices": [
                         {
                             "index": 0,

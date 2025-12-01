@@ -17,9 +17,13 @@ import {
   Key,
   Brain,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Database,
+  FolderOpen,
+  Copy,
+  Check
 } from "lucide-react";
-import { RAGMessage, SearchResult } from "../types";
+import { RAGMessage, SearchResult, DocumentGroup } from "../types";
 import Markdown from "./Markdown";
 import { AlertModal } from "./Modal";
 
@@ -46,9 +50,16 @@ export default function AskTab() {
   const [loadingKeys, setLoadingKeys] = useState(false);
   const [showAuthAlert, setShowAuthAlert] = useState(false);
 
+  // Document Group State
+  const [groups, setGroups] = useState<DocumentGroup[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string>(""); // Empty string = all docs
+
+  // Clipboard state
+  const [copied, setCopied] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Fetch models and API keys on mount
+  // Fetch models, API keys, and groups on mount
   useEffect(() => {
     setOrigin(window.location.origin);
     const fetchModels = async () => {
@@ -88,9 +99,35 @@ export default function AskTab() {
       }
     };
 
+    const fetchGroups = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/groups`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGroups(data);
+        }
+      } catch (e) {
+        console.error("Failed to fetch groups", e);
+      }
+    };
+
     fetchModels();
     fetchApiKeys();
+    fetchGroups();
   }, []);
+
+  // Compute the effective model name with group suffix
+  const effectiveModel = selectedGroup
+    ? `${selectedModel}-${selectedGroup}`
+    : selectedModel;
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,7 +155,7 @@ export default function AskTab() {
         body: JSON.stringify({
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
           stream: true,
-          model: selectedModel || undefined,
+          model: effectiveModel || undefined,
           use_history: useHistory,
           temperature: temperature,
           top_k: topK,
@@ -316,6 +353,37 @@ export default function AskTab() {
           </div>
         </div>
 
+        {/* Document Group Selection */}
+        <div className="space-y-3 mb-6">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <FolderOpen className="w-4 h-4 text-green-600" />
+            Document Scope
+          </label>
+          <div className="relative">
+            <select
+              value={selectedGroup}
+              onChange={(e) => setSelectedGroup(e.target.value)}
+              className="w-full appearance-none bg-white border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 pr-8"
+            >
+              <option value="">All Documents</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.name}>
+                  {group.name} ({group.documentCount})
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-700">
+              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+            </div>
+          </div>
+          {selectedGroup && (
+            <p className="text-[10px] text-green-600 leading-tight flex items-center gap-1">
+              <Database className="w-3 h-3" />
+              RAG will search only in &quot;{selectedGroup}&quot; group
+            </p>
+          )}
+        </div>
+
         {/* Context Settings */}
         <div className="space-y-3 mb-6">
           <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -409,62 +477,62 @@ export default function AskTab() {
           </div>
         </div>
 
-        {/* API Usage Hint */}
+        {/* API Usage - Styled like SearchTab cURL Request */}
         <div className="mt-auto pt-6 border-t border-slate-200">
-          <div className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-3">
-            <div className="p-1 bg-slate-200 rounded">
-              <svg className="w-3 h-3 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            API Usage
-          </div>
-          <div className="bg-slate-900 rounded-lg p-3 group relative">
-            <pre className="text-[10px] text-slate-300 font-mono whitespace-pre-wrap break-all leading-relaxed">
-{`curl -X POST ${origin}/v1/chat/completions \\
+          <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-lg">
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-950 border-b border-slate-800">
+              <div className="text-xs font-medium text-slate-400">
+                cURL Request
+              </div>
+              <button
+                onClick={() => copyToClipboard(`curl -X POST "${origin}/v1/chat/completions" \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${selectedApiKey || 'YOUR_API_KEY'}" \\
   -d '{
-    "model": "${selectedModel || 'default'}",
-    "messages": [
-      {"role": "user", "content": "Your question here"}
-    ],
-    "use_history": ${useHistory},
-    "top_k": ${topK},
-    "temperature": ${temperature},
-    "max_tokens": ${maxTokens},
+    "model": "${effectiveModel || 'default'}",
+    "messages": [{"role": "user", "content": "Your question"}],
     "stream": true
-  }'`}
-            </pre>
-            <button
-              onClick={() => {
-                const cmd = `curl -X POST ${window.location.origin}/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${selectedApiKey || 'YOUR_API_KEY'}" \
-  -d '{
-    "model": "${selectedModel || 'default'}",
-    "messages": [
-      {"role": "user", "content": "Your question here"}
-    ],
-    "use_history": ${useHistory},
-    "top_k": ${topK},
-    "temperature": ${temperature},
-    "max_tokens": ${maxTokens},
-    "stream": true
-  }'`;
-                navigator.clipboard.writeText(cmd);
-              }}
-              className="absolute top-2 right-2 p-1.5 bg-slate-800 text-slate-400 rounded hover:bg-slate-700 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Copy to clipboard"
-            >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
+  }'`)}
+                className="text-slate-500 hover:text-white transition-colors"
+                title="Copy to clipboard"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+            <div className="p-3 overflow-x-auto">
+              <pre className="text-xs font-mono whitespace-pre leading-relaxed">
+                <span className="text-purple-400">curl</span> -X POST{" "}
+                <span className="text-green-400">&quot;{origin}/v1/chat/completions&quot;</span>{" "}
+                \{"\n"}
+                {"  "}-H{" "}
+                <span className="text-green-400">&quot;Content-Type: application/json&quot;</span>{" "}
+                \{"\n"}
+                {"  "}-H{" "}
+                <span className="text-green-400">&quot;Authorization: Bearer {selectedApiKey ? selectedApiKey.slice(0, 12) + "..." : "YOUR_API_KEY"}&quot;</span>{" "}
+                \{"\n"}
+                {"  "}-d{" "}
+                <span className="text-green-400">&apos;{"{"}{"\n"}</span>
+                <span className="text-green-400">{"    "}&quot;model&quot;: &quot;{effectiveModel || "default"}&quot;,{"\n"}</span>
+                <span className="text-green-400">{"    "}&quot;messages&quot;: [{"{"}&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;...&quot;{"}"}],{"\n"}</span>
+                <span className="text-green-400">{"    "}&quot;stream&quot;: true{"\n"}</span>
+                <span className="text-green-400">{"  "}{"}"}&apos;</span>
+              </pre>
+            </div>
+            <div className="px-4 py-2 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-500 space-y-1">
+              <div>
+                <span className="font-mono text-green-400">model</span>: Use{" "}
+                <span className="font-mono text-slate-400">{selectedModel || "model"}-GroupName</span>{" "}
+                to filter by group
+              </div>
+              <div>
+                If group not found, automatically falls back to all documents
+              </div>
+            </div>
           </div>
-          <p className="text-[10px] text-slate-500 mt-2">
-            Use this command to integrate RAG into your own applications.
-          </p>
         </div>
       </div>
 
@@ -479,10 +547,32 @@ export default function AskTab() {
               <h2 className="text-2xl font-bold text-slate-900 mb-3">
                 RAG Assistant
               </h2>
-              <p className="text-slate-500 max-w-md mx-auto leading-relaxed">
-                Configure your search parameters on the left, then ask questions about your knowledge base. 
-                I'll retrieve relevant documents and generate answers based on your settings.
+              <p className="text-slate-500 max-w-md mx-auto leading-relaxed mb-4">
+                Configure your search parameters on the left, then ask questions about your knowledge base.
+                I&apos;ll retrieve relevant documents and generate answers based on your settings.
               </p>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 max-w-lg w-full text-left">
+                <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-green-600" />
+                  Group Filtering via Model Name
+                </h3>
+                <p className="text-xs text-slate-600 mb-3">
+                  Filter RAG search by document group using the model name format:
+                </p>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-start gap-2">
+                    <code className="bg-slate-100 px-2 py-1 rounded text-slate-800 font-mono shrink-0">gpt-4o-mini</code>
+                    <span className="text-slate-500 pt-0.5">Search all documents</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <code className="bg-slate-100 px-2 py-1 rounded text-slate-800 font-mono shrink-0">gpt-4o-mini-AI Knowledge</code>
+                    <span className="text-slate-500 pt-0.5">Search only &quot;AI Knowledge&quot; group</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-3">
+                  If the group doesn&apos;t exist, it will automatically fall back to searching all documents.
+                </p>
+              </div>
             </div>
           ) : (
             messages.map((msg, idx) => (
