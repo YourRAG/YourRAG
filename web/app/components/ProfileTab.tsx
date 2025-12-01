@@ -35,6 +35,7 @@ export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTa
   const [isSavingSystemConfig, setIsSavingSystemConfig] = useState(false);
   const [systemConfigMessage, setSystemConfigMessage] = useState("");
   const [activeInstances, setActiveInstances] = useState<string[]>([]);
+  const [coverImageLoaded, setCoverImageLoaded] = useState(false);
   
   const hasFetched = useRef(false);
 
@@ -174,9 +175,19 @@ export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTa
       {/* Main Profile Card */}
       <div className="bg-white shadow-xl shadow-slate-200/50 overflow-hidden border border-slate-200 rounded-2xl">
         {/* Cover Image */}
-        <div className="h-48 bg-gradient-to-r from-slate-800 to-slate-900 relative overflow-hidden">
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10"></div>
-            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+        <div className="h-48 relative overflow-hidden bg-slate-200">
+            {!coverImageLoaded && (
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-r from-slate-200 to-slate-300 animate-pulse">
+                <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
+              </div>
+            )}
+            <img
+              src="https://picsum.photos/1920/600"
+              alt="Cover"
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${coverImageLoaded ? 'opacity-100' : 'opacity-0'}`}
+              onLoad={() => setCoverImageLoaded(true)}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
         </div>
 
         <div className="px-4 sm:px-8 pb-8">

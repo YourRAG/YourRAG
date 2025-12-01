@@ -543,9 +543,6 @@ export default function AskTab() {
         <div className="flex-1 overflow-y-auto space-y-4 p-4 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
-              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-blue-50 mb-6">
-                <Bot className="w-10 h-10 text-blue-600" />
-              </div>
               <h2 className="text-2xl font-bold text-slate-900 mb-3">
                 RAG Assistant
               </h2>
@@ -714,14 +711,13 @@ export default function AskTab() {
             <button
               type="submit"
               disabled={isAsking || !query.trim()}
-              className="flex-shrink-0 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium transition-all shadow-sm"
+              className="flex-shrink-0 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center font-medium transition-all shadow-sm"
             >
               {isAsking ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <Zap className="w-4 h-4 fill-current" />
+                <Zap className="w-5 h-5 fill-current" />
               )}
-              Ask
             </button>
           </form>
         </div>
