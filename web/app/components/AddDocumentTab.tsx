@@ -1,7 +1,13 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { Loader2, Plus, Tag, Link as LinkIcon, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus } from "lucide-react";
+
+interface DocumentGroup {
+  id: number;
+  name: string;
+  documentCount: number;
+}
 
 export default function AddDocumentTab() {
   const [content, setContent] = useState("");
@@ -12,12 +18,36 @@ export default function AddDocumentTab() {
   const [message, setMessage] = useState("");
   const [showCurl, setShowCurl] = useState(false);
   const [copied, setCopied] = useState(false);
+  
+  // Group selection
+  const [groups, setGroups] = useState<DocumentGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [isCreatingNewGroup, setIsCreatingNewGroup] = useState(false);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  // Fetch groups on mount
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/groups`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGroups(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch groups:", error);
+      }
+    };
+    fetchGroups();
+  }, []);
 
   const docCount = content
     .split("--------")
@@ -71,6 +101,15 @@ export default function AddDocumentTab() {
 
     try {
       let successCount = 0;
+      
+      // Prepare metadata with group info
+      const metadata: Record<string, unknown> = { category: "", source: "" };
+      if (isCreatingNewGroup && newGroupName.trim()) {
+        metadata.groupName = newGroupName.trim();
+      } else if (selectedGroupId) {
+        metadata.groupId = selectedGroupId;
+      }
+      
       for (let i = 0; i < docs.length; i++) {
         const docContent = docs[i];
         setMessage(`Adding document ${i + 1} of ${docs.length}...`);
@@ -81,12 +120,25 @@ export default function AddDocumentTab() {
           credentials: "include",
           body: JSON.stringify({
             content: docContent,
-            metadata: { category: "", source: "" },
+            metadata: metadata,
           }),
         });
 
         if (!res.ok) throw new Error(`Failed to add document ${i + 1}`);
         successCount++;
+      }
+
+      // Refresh groups if we created a new one
+      if (isCreatingNewGroup && newGroupName.trim()) {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/groups`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGroups(data);
+        }
+        setIsCreatingNewGroup(false);
+        setNewGroupName("");
       }
 
       setMessage(
@@ -123,6 +175,80 @@ export default function AddDocumentTab() {
 
         <div className="p-6 sm:p-8">
           <form onSubmit={handleSubmit} className="space-y-8">
+            {/* Folder Selection */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-3">
+                Add to Folder <span className="text-slate-400 font-normal">(optional)</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGroupId(null);
+                    setIsCreatingNewGroup(false);
+                    setNewGroupName("");
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                    !selectedGroupId && !isCreatingNewGroup
+                      ? "bg-blue-100 text-blue-700 border-2 border-blue-300"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 border-2 border-transparent"
+                  }`}
+                >
+                  <Folder className="w-4 h-4" />
+                  No Folder
+                </button>
+                
+                {groups.map((group) => (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedGroupId(group.id);
+                      setIsCreatingNewGroup(false);
+                      setNewGroupName("");
+                    }}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                      selectedGroupId === group.id
+                        ? "bg-blue-100 text-blue-700 border-2 border-blue-300"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 border-2 border-transparent"
+                    }`}
+                  >
+                    <Folder className="w-4 h-4" />
+                    {group.name}
+                  </button>
+                ))}
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingNewGroup(true);
+                    setSelectedGroupId(null);
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                    isCreatingNewGroup
+                      ? "bg-green-100 text-green-700 border-2 border-green-300"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 border-2 border-transparent"
+                  }`}
+                >
+                  <FolderPlus className="w-4 h-4" />
+                  New Folder
+                </button>
+              </div>
+              
+              {isCreatingNewGroup && (
+                <div className="mt-3 animate-in fade-in slide-in-from-top-2">
+                  <input
+                    type="text"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    placeholder="Enter folder name..."
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
+                    autoFocus
+                  />
+                </div>
+              )}
+            </div>
+
             <div>
               <div className="flex items-center justify-between mb-3">
                 <label className="block text-sm font-semibold text-slate-700">
@@ -256,7 +382,8 @@ export default function AddDocumentTab() {
   -d '{
     "content": "Your document content here",
     "metadata": {
-      "category": "example"
+      "category": "example",
+      "groupName": "My Folder"
     }
   }'`)}
                       className="text-slate-500 hover:text-white transition-colors"
@@ -273,13 +400,15 @@ export default function AddDocumentTab() {
                       {'  '}-d <span className="text-yellow-400">'{'{'}</span>
                       {'\n    '}<span className="text-orange-400">"content"</span>: <span className="text-green-400">"Your document content here"</span>,
                       {'\n    '}<span className="text-orange-400">"metadata"</span>: <span className="text-yellow-400">{'{'}</span>
-                      {'\n      '}<span className="text-orange-400">"category"</span>: <span className="text-green-400">"example"</span>
+                      {'\n      '}<span className="text-orange-400">"category"</span>: <span className="text-green-400">"example"</span>,
+                      {'\n      '}<span className="text-orange-400">"groupName"</span>: <span className="text-green-400">"My Folder"</span>
                       {'\n    '}<span className="text-yellow-400">{'}'}</span>
                       {'\n  '}<span className="text-yellow-400">{'}'}'</span>
                     </pre>
                   </div>
-                  <div className="px-4 py-3 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-500">
-                    Replace <span className="font-mono text-slate-400">rag-xxxxxxxxxxxx</span> with your API key from the Manage tab.
+                  <div className="px-4 py-3 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-500 space-y-1">
+                    <div>Replace <span className="font-mono text-slate-400">rag-xxxxxxxxxxxx</span> with your API key from the Manage tab.</div>
+                    <div>Use <span className="font-mono text-slate-400">groupName</span> to add to a folder (creates if not exists), or <span className="font-mono text-slate-400">groupId</span> for existing folder.</div>
                   </div>
                 </div>
               )}

@@ -1,7 +1,10 @@
 from typing import List, Dict, Any, Optional, Tuple
 import json
+from datetime import datetime
 from prisma import Prisma
 from embedding_service import EmbeddingService
+from config_service import config_service
+import config
 
 class DocumentStore:
     def __init__(self):
@@ -244,6 +247,33 @@ class DocumentStore:
             "documentCount": 0
         }
 
+    async def find_or_create_group(self, user_id: int, name: str) -> int:
+        """Find an existing group by name or create a new one.
+        
+        Args:
+            user_id: The user ID
+            name: The group name
+            
+        Returns:
+            The group ID (existing or newly created)
+        """
+        # Try to find existing group
+        existing = await self.db.documentgroup.find_first(
+            where={"userId": user_id, "name": name}
+        )
+        
+        if existing:
+            return existing.id
+        
+        # Create new group
+        group = await self.db.documentgroup.create(
+            data={
+                "name": name,
+                "userId": user_id
+            }
+        )
+        return group.id
+
     async def update_group(self, user_id: int, group_id: int, name: str) -> Optional[Dict[str, Any]]:
         """Update a document group."""
         try:
@@ -271,20 +301,42 @@ class DocumentStore:
         except Exception:
             return None
 
-    async def delete_group(self, user_id: int, group_id: int) -> bool:
-        """Delete a document group. Documents are preserved (groupId set to null)."""
+    async def delete_group(self, user_id: int, group_id: int, delete_documents: bool = False) -> Optional[Dict[str, Any]]:
+        """Delete a document group.
+        
+        Args:
+            user_id: The user ID
+            group_id: The group ID to delete
+            delete_documents: If True, delete all documents in the group.
+                             If False, documents are preserved (groupId set to null).
+        
+        Returns:
+            Dict with deletion info or None if group not found
+        """
         try:
             # First check ownership
             group = await self.db.documentgroup.find_unique(
                 where={"id": group_id}
             )
             if not group or group.userId != user_id:
-                return False
-                
+                return None
+            
+            deleted_doc_count = 0
+            
+            if delete_documents:
+                # Delete all documents in the group
+                deleted_doc_count = await self.db.document.delete_many(
+                    where={"groupId": group_id, "userId": user_id}
+                )
+            
             await self.db.documentgroup.delete(where={"id": group_id})
-            return True
+            
+            return {
+                "message": "Group deleted successfully",
+                "deletedDocuments": deleted_doc_count
+            }
         except Exception:
-            return False
+            return None
 
     async def assign_documents_to_group(self, user_id: int, group_id: Optional[int], doc_ids: List[int]) -> int:
         """Assign documents to a group (or remove from group if group_id is None)."""
@@ -338,3 +390,195 @@ class DocumentStore:
         )
 
         return count
+
+    async def export_group(self, user_id: int, group_id: int, include_vectors: bool = False) -> Optional[Dict[str, Any]]:
+        """Export a document group with all documents.
+        
+        Args:
+            user_id: The user ID
+            group_id: The group ID to export
+            include_vectors: Whether to include embedding vectors in the export
+            
+        Returns:
+            Export data dict or None if group not found
+        """
+        # Verify group ownership
+        group = await self.db.documentgroup.find_unique(where={"id": group_id})
+        if not group or group.userId != user_id:
+            return None
+        
+        # Get all documents in the group
+        if include_vectors:
+            # Use raw query to get vectors
+            query = """
+                SELECT id, content, metadata, embedding::text as embedding_text
+                FROM "Document"
+                WHERE "groupId" = $1 AND "userId" = $2
+                ORDER BY id ASC
+            """
+            docs = await self.db.query_raw(query, group_id, user_id)
+            
+            documents = []
+            for doc in docs:
+                doc_data = {
+                    "content": doc["content"],
+                    "metadata": json.loads(doc["metadata"]) if isinstance(doc["metadata"], str) else doc["metadata"]
+                }
+                # Parse embedding from text format [x,y,z,...] to list
+                if doc["embedding_text"]:
+                    embedding_str = doc["embedding_text"].strip("[]")
+                    if embedding_str:
+                        doc_data["embedding"] = [float(x) for x in embedding_str.split(",")]
+                documents.append(doc_data)
+        else:
+            docs = await self.db.document.find_many(
+                where={"groupId": group_id, "userId": user_id},
+                order={"id": "asc"}
+            )
+            documents = [
+                {
+                    "content": doc.content,
+                    "metadata": json.loads(doc.metadata) if isinstance(doc.metadata, str) else doc.metadata
+                }
+                for doc in docs
+            ]
+        
+        # Get actual model name and dimension from config service
+        actual_model_name = config_service.get_value("EMBEDDING_MODEL_NAME", config.MODEL_NAME)
+        actual_dimension = int(config_service.get_value("EMBEDDING_VECTOR_DIMENSION", str(config.VECTOR_DIMENSION)))
+        
+        export_data = {
+            "version": "1.0",
+            "groupName": group.name,
+            "exportedAt": datetime.utcnow().isoformat() + "Z",
+            "includesVectors": include_vectors,
+            "documents": documents
+        }
+        
+        if include_vectors:
+            export_data["embeddingModel"] = actual_model_name
+            export_data["vectorDimension"] = actual_dimension
+        
+        return export_data
+
+    async def generate_unique_group_name(self, user_id: int, base_name: str) -> str:
+        """Generate a unique group name for the user.
+        
+        If base_name exists, appends (1), (2), etc. until unique.
+        """
+        # Check if base name exists
+        existing = await self.db.documentgroup.find_first(
+            where={"userId": user_id, "name": base_name}
+        )
+        
+        if not existing:
+            return base_name
+        
+        # Try incrementing suffix
+        counter = 1
+        while True:
+            new_name = f"{base_name} ({counter})"
+            existing = await self.db.documentgroup.find_first(
+                where={"userId": user_id, "name": new_name}
+            )
+            if not existing:
+                return new_name
+            counter += 1
+            # Safety limit
+            if counter > 1000:
+                raise ValueError("Too many groups with similar names")
+
+    async def import_group(
+        self,
+        user_id: int,
+        import_data: Dict[str, Any],
+        use_existing_vectors: bool = False
+    ) -> Dict[str, Any]:
+        """Import a document group with documents.
+        
+        Args:
+            user_id: The user ID
+            import_data: The exported data to import
+            use_existing_vectors: If True, use vectors from import_data;
+                                  if False, generate new vectors
+            
+        Returns:
+            Dict with group info and import statistics
+        """
+        # Validate import data
+        if import_data.get("version") != "1.0":
+            raise ValueError("Unsupported export version")
+        
+        documents = import_data.get("documents", [])
+        if not documents:
+            raise ValueError("No documents to import")
+        
+        # Generate unique group name
+        base_name = import_data.get("groupName", "Imported Group")
+        group_name = await self.generate_unique_group_name(user_id, base_name)
+        
+        # Create the new group
+        group = await self.db.documentgroup.create(
+            data={
+                "name": group_name,
+                "userId": user_id
+            }
+        )
+        
+        imported_count = 0
+        failed_count = 0
+        
+        for doc_data in documents:
+            try:
+                content = doc_data.get("content", "")
+                metadata = doc_data.get("metadata", {})
+                
+                if not content:
+                    failed_count += 1
+                    continue
+                
+                metadata_json = json.dumps(metadata)
+                
+                if use_existing_vectors and "embedding" in doc_data:
+                    # Use pre-existing vectors
+                    embedding = doc_data["embedding"]
+                    embedding_str = f"[{','.join(map(str, embedding))}]"
+                    
+                    query = """
+                        INSERT INTO "Document" ("userId", "content", "metadata", "embedding", "groupId", "updatedAt")
+                        VALUES ($1, $2, $3::jsonb, $4::vector, $5, NOW())
+                        RETURNING id
+                    """
+                    await self.db.query_raw(query, user_id, content, metadata_json, embedding_str, group.id)
+                else:
+                    # Generate new embeddings
+                    embedding = self.embedding_service.get_embedding(content)
+                    if not embedding:
+                        failed_count += 1
+                        continue
+                    
+                    embedding_str = f"[{','.join(map(str, embedding))}]"
+                    
+                    query = """
+                        INSERT INTO "Document" ("userId", "content", "metadata", "embedding", "groupId", "updatedAt")
+                        VALUES ($1, $2, $3::jsonb, $4::vector, $5, NOW())
+                        RETURNING id
+                    """
+                    await self.db.query_raw(query, user_id, content, metadata_json, embedding_str, group.id)
+                
+                imported_count += 1
+                
+            except Exception as e:
+                print(f"Failed to import document: {e}")
+                failed_count += 1
+        
+        return {
+            "group": {
+                "id": group.id,
+                "name": group.name,
+                "createdAt": group.createdAt.isoformat()
+            },
+            "importedCount": imported_count,
+            "failedCount": failed_count,
+            "totalDocuments": len(documents)
+        }
