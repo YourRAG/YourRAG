@@ -16,10 +16,11 @@
 ---
 ## What is YourRAG / YourRAG 是什么
 ![YourRAG](https://edgeoneimg.cdn.sn/i/692b899378285_1764460947.webp)
-
+![Waving](https://capsule-render.vercel.app/api?section=footer&type=waving&color=gradient&height=100&section=footer)
 ![YourRAG](https://edgeoneimg.cdn.sn/i/692ad1d14125b_1764413905.webp)
 
 ## How to Deploy YourRAG / 如何部署 YourRAG
 
-![docker](https://edgeoneimg.cdn.sn/i/692a607a5f68b_1764384890.webp)
 ![docker](https://edgeoneimg.cdn.sn/i/692ac7d1126c5_1764411345.webp)
+![Waving](https://capsule-render.vercel.app/api?section=footer&type=waving&color=gradient&height=100&section=footer)
+![docker](https://edgeoneimg.cdn.sn/i/692a607a5f68b_1764384890.webp)
