@@ -441,11 +441,11 @@ export default function AddDocumentTab() {
 
                 {/* Content Editor - Takes remaining space */}
                 <div className="flex-1 flex flex-col min-h-0">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
                     <label className="block text-sm font-semibold text-slate-700">
                       Content <span className="text-red-500">*</span>
                     </label>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <input
                         type="file"
                         accept=".pdf,.docx"
@@ -461,7 +461,8 @@ export default function AddDocumentTab() {
                         title="Import PDF/Word"
                       >
                         {isParsing ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileUp className="w-3 h-3" />}
-                        PDF/Word
+                        <span className="hidden xs:inline">PDF/Word</span>
+                        <span className="xs:hidden">PDF</span>
                       </button>
                       <input
                         type="file"
@@ -477,7 +478,8 @@ export default function AddDocumentTab() {
                         title="Import MD/TXT"
                       >
                         <Upload className="w-3 h-3" />
-                        MD/TXT
+                        <span className="hidden xs:inline">MD/TXT</span>
+                        <span className="xs:hidden">TXT</span>
                       </button>
                       <button
                         type="button"
@@ -486,7 +488,8 @@ export default function AddDocumentTab() {
                         title="Insert Separator"
                       >
                         <Split className="w-3 h-3" />
-                        Separator
+                        <span className="hidden xs:inline">Separator</span>
+                        <span className="xs:hidden">Sep</span>
                       </button>
                     </div>
                   </div>
@@ -749,11 +752,11 @@ export default function AddDocumentTab() {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <label className="block text-sm font-semibold text-slate-700">
                   Content <span className="text-red-500">*</span>
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                   <input
                     type="file"
                     accept=".pdf,.docx"
@@ -765,7 +768,7 @@ export default function AddDocumentTab() {
                     type="button"
                     onClick={() => docFileInputRef.current?.click()}
                     disabled={isParsing}
-                    className="text-xs flex items-center gap-1.5 text-purple-600 hover:text-purple-700 font-medium px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="text-xs flex items-center gap-1 sm:gap-1.5 text-purple-600 hover:text-purple-700 font-medium px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Import content from PDF or Word document"
                   >
                     {isParsing ? (
@@ -773,7 +776,8 @@ export default function AddDocumentTab() {
                     ) : (
                       <FileUp className="w-3 h-3" />
                     )}
-                    {isParsing ? "Parsing..." : "Import PDF/Word"}
+                    <span className="hidden sm:inline">{isParsing ? "Parsing..." : "Import PDF/Word"}</span>
+                    <span className="sm:hidden">{isParsing ? "..." : "PDF"}</span>
                   </button>
                   <input
                     type="file"
@@ -785,20 +789,22 @@ export default function AddDocumentTab() {
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="text-xs flex items-center gap-1.5 text-slate-600 hover:text-slate-700 font-medium px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors"
+                    className="text-xs flex items-center gap-1 sm:gap-1.5 text-slate-600 hover:text-slate-700 font-medium px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors"
                     title="Import content from a Markdown or text file"
                   >
                     <Upload className="w-3 h-3" />
-                    Import MD/TXT
+                    <span className="hidden sm:inline">Import MD/TXT</span>
+                    <span className="sm:hidden">TXT</span>
                   </button>
                   <button
                     type="button"
                     onClick={insertSeparator}
-                    className="text-xs flex items-center gap-1.5 text-blue-600 hover:text-blue-700 font-medium px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors"
+                    className="text-xs flex items-center gap-1 sm:gap-1.5 text-blue-600 hover:text-blue-700 font-medium px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors"
                     title="Insert separator to add multiple documents at once"
                   >
                     <Split className="w-3 h-3" />
-                    Insert Separator
+                    <span className="hidden sm:inline">Insert Separator</span>
+                    <span className="sm:hidden">Sep</span>
                   </button>
                 </div>
               </div>
