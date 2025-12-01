@@ -107,18 +107,53 @@ async def chat_completions(
         group_id_for_search = None
         
         if actual_model and actual_model != "default":
-            last_dash_idx = actual_model.rfind("-")
-            if last_dash_idx > 0:
-                potential_group_name = actual_model[last_dash_idx + 1:]
-                potential_model_name = actual_model[:last_dash_idx]
+            # Try to find a matching group by checking all user's groups
+            # This handles group names with special characters like "owner/repo"
+            user_groups = await prisma.documentgroup.find_many(
+                where={"userId": current_user.id}
+            )
+            
+            matched_group = None
+            matched_model_name = actual_model
+            
+            # Sort groups by name length (longest first) to match the most specific group
+            sorted_groups = sorted(user_groups, key=lambda g: len(g.name), reverse=True)
+            
+            for group in sorted_groups:
+                # Check if model name ends with "-groupname" (with dash separator)
+                suffix_with_dash = f"-{group.name}"
+                if actual_model.endswith(suffix_with_dash):
+                    matched_group = group
+                    matched_model_name = actual_model[:-len(suffix_with_dash)]
+                    break
                 
-                if potential_group_name:
-                    group = await prisma.documentgroup.find_first(
-                        where={"userId": current_user.id, "name": potential_group_name}
-                    )
-                    if group:
-                        group_id_for_search = group.id
-                        actual_model = potential_model_name
+                # Check if model name ends with "groupname" (without dash separator)
+                # Only match if it's a clear suffix (e.g., for "owner/repo" style names)
+                if "/" in group.name and actual_model.endswith(group.name):
+                    potential_model = actual_model[:-len(group.name)]
+                    # Ensure the model name part is valid (ends with alphanumeric or dash)
+                    if potential_model and (potential_model[-1].isalnum() or potential_model[-1] == '-'):
+                        matched_group = group
+                        matched_model_name = potential_model.rstrip('-')
+                        break
+            
+            if matched_group:
+                group_id_for_search = matched_group.id
+                actual_model = matched_model_name
+            else:
+                # Fallback: try the old dash-based parsing for simple group names
+                last_dash_idx = actual_model.rfind("-")
+                if last_dash_idx > 0:
+                    potential_group_name = actual_model[last_dash_idx + 1:]
+                    potential_model_name = actual_model[:last_dash_idx]
+                    
+                    if potential_group_name and "/" not in potential_group_name:
+                        group = await prisma.documentgroup.find_first(
+                            where={"userId": current_user.id, "name": potential_group_name}
+                        )
+                        if group:
+                            group_id_for_search = group.id
+                            actual_model = potential_model_name
 
         top_k = input_data.top_k or current_user.topK or 5
 
