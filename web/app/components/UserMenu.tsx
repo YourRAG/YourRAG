@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { LogOut, User as UserIcon, Github } from "lucide-react";
+import { LogOut, User as UserIcon, Github, Play } from "lucide-react";
 import { User } from "../types";
 
 interface UserMenuProps {
@@ -10,6 +10,7 @@ interface UserMenuProps {
   onLogin: (provider?: string) => void;
   onLogout: () => Promise<void>;
   onProfileClick: () => void;
+  onDemoClick: () => void;
   providers: string[];
 }
 
@@ -19,6 +20,7 @@ export default function UserMenu({
   onLogin,
   onLogout,
   onProfileClick,
+  onDemoClick,
   providers,
 }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -95,6 +97,17 @@ export default function UserMenu({
             )}
           </div>
           
+          <button
+            onClick={() => {
+              onDemoClick();
+              setIsOpen(false);
+            }}
+            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <Play className="w-4 h-4" />
+            Demo
+          </button>
+
           <button
             onClick={() => {
               onProfileClick();

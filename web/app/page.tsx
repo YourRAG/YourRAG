@@ -11,6 +11,7 @@ import ManageTab from "./components/ManageTab";
 import RecentActivityTab from "./components/RecentActivityTab";
 import ProfileTab from "./components/ProfileTab";
 import AdminTab from "./components/AdminTab";
+import DemoTab from "./components/DemoTab";
 import UserMenu from "./components/UserMenu";
 import { useAuth } from "./hooks/useAuth";
 
@@ -22,7 +23,7 @@ function HomeContent() {
 
   useEffect(() => {
     const tab = searchParams.get("tab");
-    if (tab && ["ask", "search", "add", "manage", "activity", "profile", "admin"].includes(tab)) {
+    if (tab && ["ask", "search", "add", "manage", "activity", "profile", "admin", "demo"].includes(tab)) {
       setActiveTab(tab as TabType);
     }
   }, [searchParams]);
@@ -149,6 +150,7 @@ function HomeContent() {
               onLogin={login}
               onLogout={logout}
               onProfileClick={() => setActiveTab("profile")}
+              onDemoClick={() => setActiveTab("demo")}
               providers={providers}
             />
           </div>
@@ -243,6 +245,7 @@ function HomeContent() {
             {activeTab === "activity" && <RecentActivityTab />}
             {activeTab === "profile" && <ProfileTab user={user} onUnauthorized={handleUnauthorized} onUpdate={refetch} />}
             {activeTab === "admin" && user.role === "ADMIN" && <AdminTab />}
+            {activeTab === "demo" && <DemoTab />}
           </div>
         )}
       </div>
