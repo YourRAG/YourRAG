@@ -1,8 +1,14 @@
 import httpx
 import config
-from typing import List, Dict, Any, Optional, AsyncGenerator
+from typing import List, Dict, Any, Optional, AsyncGenerator, TypedDict
 import json
 from config_service import config_service
+
+
+class StreamChunk(TypedDict, total=False):
+    """Streaming chunk with content and optional reasoning."""
+    content: str
+    reasoning_content: str
 
 
 class LLMService:
@@ -163,8 +169,12 @@ Instructions for interactions without knowledge base context:
         temperature: float = 0.7,
         max_tokens: int = 1024,
         model: Optional[str] = None,
-    ) -> AsyncGenerator[str, None]:
-        """Generate a streaming response using RAG."""
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """Generate a streaming response using RAG.
+        
+        Yields StreamChunk dictionaries with 'content' and/or 'reasoning_content'.
+        This supports models with thinking/reasoning capabilities (e.g., QwQ, Claude thinking).
+        """
         messages = self._build_rag_prompt(query, contexts, system_prompt, history)
 
         # Use provided model if available and not "default", otherwise use config model
@@ -244,9 +254,23 @@ Instructions for interactions without knowledge base context:
                                     data = json.loads(data_str)
                                     if "choices" in data and len(data["choices"]) > 0:
                                         delta = data["choices"][0].get("delta", {})
+                                        chunk: StreamChunk = {}
+                                        
+                                        # Extract regular content
                                         content = delta.get("content", "")
                                         if content:
-                                            yield content
+                                            chunk["content"] = content
+                                        
+                                        # Extract reasoning content - support both field names:
+                                        # - reasoning_content: used by DeepSeek-R1, QwQ, vLLM, etc.
+                                        # - reasoning: used by some other providers
+                                        reasoning_content = delta.get("reasoning_content") or delta.get("reasoning", "")
+                                        if reasoning_content:
+                                            chunk["reasoning_content"] = reasoning_content
+                                        
+                                        # Only yield if there's actual content
+                                        if chunk:
+                                            yield chunk
                                 except json.JSONDecodeError:
                                     continue
                 

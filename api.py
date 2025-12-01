@@ -1114,6 +1114,13 @@ async def chat_completions(
                 max_tokens=input_data.max_tokens,
                 model=input_data.model,
             ):
+                # Build delta with content and/or reasoning_content
+                delta = {}
+                if "content" in chunk:
+                    delta["content"] = chunk["content"]
+                if "reasoning_content" in chunk:
+                    delta["reasoning_content"] = chunk["reasoning_content"]
+                
                 chunk_data = {
                     "id": chat_id,
                     "object": "chat.completion.chunk",
@@ -1122,7 +1129,7 @@ async def chat_completions(
                     "choices": [
                         {
                             "index": 0,
-                            "delta": {"content": chunk},
+                            "delta": delta,
                             "finish_reason": None,
                         }
                     ],

@@ -61,6 +61,7 @@ export interface SearchResult {
 export interface RAGMessage {
   role: "user" | "assistant";
   content: string;
+  reasoning?: string;
   sources?: SearchResult[];
 }
 

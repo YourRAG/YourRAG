@@ -14,7 +14,10 @@ import {
   History,
   Cpu,
   AlignLeft,
-  Key
+  Key,
+  Brain,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 import { RAGMessage, SearchResult } from "../types";
 import Markdown from "./Markdown";
@@ -25,6 +28,7 @@ export default function AskTab() {
   const [messages, setMessages] = useState<RAGMessage[]>([]);
   const [isAsking, setIsAsking] = useState(false);
   const [showSources, setShowSources] = useState<number | null>(null);
+  const [showReasoning, setShowReasoning] = useState<number | null>(null);
   
   // Configuration States
   const [models, setModels] = useState<{ id: string }[]>([]);
@@ -131,6 +135,7 @@ export default function AskTab() {
       let assistantMessage: RAGMessage = {
         role: "assistant",
         content: "",
+        reasoning: "",
         sources: [],
       };
       setMessages((prev) => [...prev, assistantMessage]);
@@ -152,6 +157,21 @@ export default function AskTab() {
               // Handle custom sources extension
               if (data.sources) {
                 assistantMessage = { ...assistantMessage, sources: data.sources };
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  newMessages[newMessages.length - 1] = assistantMessage;
+                  return newMessages;
+                });
+              }
+
+              // Handle reasoning content (thinking models like QwQ, DeepSeek-R1)
+              // Support both field names: reasoning_content and reasoning
+              const reasoningDelta = data.choices?.[0]?.delta?.reasoning_content || data.choices?.[0]?.delta?.reasoning;
+              if (reasoningDelta) {
+                assistantMessage = {
+                  ...assistantMessage,
+                  reasoning: (assistantMessage.reasoning || "") + reasoningDelta,
+                };
                 setMessages((prev) => {
                   const newMessages = [...prev];
                   newMessages[newMessages.length - 1] = assistantMessage;
@@ -489,14 +509,45 @@ export default function AskTab() {
                       {msg.role === "user" ? (
                         <p className="whitespace-pre-wrap">{msg.content}</p>
                       ) : (
-                        <Markdown
-                          content={
-                            msg.content ||
-                            (isAsking && idx === messages.length - 1
-                              ? "Thinking..."
-                              : "")
-                          }
-                        />
+                        <>
+                          {/* Show reasoning/thinking content if available */}
+                          {msg.reasoning && (
+                            <div className="mb-3">
+                              <button
+                                onClick={() => setShowReasoning(showReasoning === idx ? null : idx)}
+                                className="flex items-center gap-1.5 text-xs font-medium text-purple-600 hover:text-purple-700 mb-2 transition-colors"
+                              >
+                                <Brain className="w-3.5 h-3.5" />
+                                {showReasoning === idx ? "Hide Thinking" : "Show Thinking"}
+                                {showReasoning === idx ? (
+                                  <ChevronUp className="w-3 h-3" />
+                                ) : (
+                                  <ChevronDown className="w-3 h-3" />
+                                )}
+                              </button>
+                              {showReasoning === idx && (
+                                <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-xs text-purple-800 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                  <Markdown content={msg.reasoning} />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {/* Show thinking status when only reasoning is streaming */}
+                          {isAsking && idx === messages.length - 1 && msg.reasoning && !msg.content && (
+                            <div className="flex items-center gap-2 text-purple-600 mb-2">
+                              <Brain className="w-4 h-4 animate-pulse" />
+                              <span className="text-xs">Thinking...</span>
+                            </div>
+                          )}
+                          <Markdown
+                            content={
+                              msg.content ||
+                              (isAsking && idx === messages.length - 1 && !msg.reasoning
+                                ? "Thinking..."
+                                : "")
+                            }
+                          />
+                        </>
                       )}
                     </div>
                   </div>
