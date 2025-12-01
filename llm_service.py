@@ -32,7 +32,8 @@ class LLMService:
         self,
         query: str,
         contexts: List[Dict[str, Any]],
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None
     ) -> List[Dict[str, str]]:
         """Build messages for RAG completion."""
         if not system_prompt:
@@ -61,16 +62,27 @@ Instructions:
         else:
             user_content = f"""Question: {query}
 
-Instructions:
-1. No relevant context documents were found for this query.
-2. Please politely inform the user that you couldn't find any relevant information in the knowledge base to answer their question.
-3. Do NOT try to answer the question using your general knowledge, as you must rely strictly on the knowledge base.
-4. Ask the user if they can provide more specific keywords or if they would like to add relevant documents."""
+Instructions for interactions without knowledge base context:
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ]
+1. **Analyze User Intent**: Determine if the user's query is:
+    *   **Conversational/Personal**: Greetings ("Hello"), questions about you ("Who are you?"), or small talk ("How are you?", "I love you").
+    *   **Factual/Specific**: Questions asking for specific data, facts, technical details, or internal knowledge.
+
+2. **Response Guidelines**:
+    *   **If Conversational**: Respond naturally, warmly, and helpfuly as a AI assistant. Be polite and engage with the user. You DO NOT need to mention the knowledge base.
+        *   *Example ("Who are you?"):* "I am an AI assistant designed to help you navigate and understand your knowledge base."
+        *   *Example ("Hello"):* "Hello! How can I help you today?"
+    *   **If Factual/Specific**: Politely explain that you don't have information on that specific topic in your current knowledge base, but offer to help if they can provide more details or upload relevant documents.
+        *   *Example:* "I don't have information about [Topic] in my current records. Could you provide more details, or would you like to add a document covering this?"
+
+3. **General Rule**: Be helpful and human-like. Avoid repetitive or robotic refusals like "I cannot find relevant documents" unless it's truly a specific query that failed."""
+
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        if history:
+            messages.extend(history)
+            
+        messages.append({"role": "user", "content": user_content})
 
         return messages
 
@@ -105,11 +117,12 @@ Instructions:
         query: str,
         contexts: List[Dict[str, Any]],
         system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 1024
     ) -> str:
         """Generate a response using RAG (Retrieval Augmented Generation)."""
-        messages = self._build_rag_prompt(query, contexts, system_prompt)
+        messages = self._build_rag_prompt(query, contexts, system_prompt, history)
 
         payload = {
             "model": self.model_name,
@@ -146,55 +159,102 @@ Instructions:
         query: str,
         contexts: List[Dict[str, Any]],
         system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 1024,
         model: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """Generate a streaming response using RAG."""
-        messages = self._build_rag_prompt(query, contexts, system_prompt)
+        messages = self._build_rag_prompt(query, contexts, system_prompt, history)
 
         # Use provided model if available and not "default", otherwise use config model
         model_to_use = model if model and model != "default" else self.model_name
 
-        payload = {
-            "model": model_to_use,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "stream": True
-        }
-        
-        # Disable proxies for local connections to prevent "All connection attempts failed" errors
-        proxies = {"all://": None}
+        max_retries = 1
+        attempt = 0
 
-        async with httpx.AsyncClient(proxies=proxies) as client:
-            async with client.stream(
-                "POST",
-                self.api_url,
-                headers=self.headers,
-                json=payload,
-                timeout=120.0
-            ) as response:
-                if response.status_code != 200:
-                    # Use aiter_bytes to read error content asynchronously if needed,
-                    # but for stream=True, we should check status before iterating
-                    # response.read() is for non-streaming requests or after stream is consumed
-                    # Here we just log the status code as reading the body might be tricky in stream mode
-                    print(f"LLM API Error: {response.status_code}")
-                    
-                response.raise_for_status()
+        while attempt <= max_retries:
+            payload = {
+                "model": model_to_use,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": True
+            }
+            
+            # Disable proxies for local connections to prevent "All connection attempts failed" errors
+            proxies = {"all://": None}
+            
+            should_retry = False
+            
+            try:
+                async with httpx.AsyncClient(proxies=proxies) as client:
+                    async with client.stream(
+                        "POST",
+                        self.api_url,
+                        headers=self.headers,
+                        json=payload,
+                        timeout=120.0
+                    ) as response:
+                        if response.status_code != 200:
+                            error_content = await response.aread()
+                            error_msg = error_content.decode('utf-8')
+                            print(f"LLM API Error: {response.status_code} - {error_msg}")
+                            
+                            # Handle "Model does not exist" error
+                            if response.status_code == 400 and "Model does not exist" in error_msg:
+                                if attempt < max_retries:
+                                    print(f"Model '{model_to_use}' not found. Attempting to switch model...")
+                                    try:
+                                        # Try to list available models
+                                        available_models = await self.list_models()
+                                        # Filter out the current failed model if it's in the list (it might be if list_models fell back)
+                                        candidates = [m["id"] for m in available_models if m["id"] != model_to_use]
+                                        
+                                        if candidates:
+                                            new_model = candidates[0]
+                                            print(f"Switching to available model: {new_model}")
+                                            model_to_use = new_model
+                                            attempt += 1
+                                            should_retry = True
+                                        else:
+                                            print("No other models found via list_models.")
+                                            # Try a hardcoded common fallback if we haven't tried it yet
+                                            fallback = "gpt-3.5-turbo"
+                                            if model_to_use != fallback:
+                                                print(f"Attempting fallback to {fallback}")
+                                                model_to_use = fallback
+                                                attempt += 1
+                                                should_retry = True
+                                    except Exception as e:
+                                        print(f"Error during model recovery: {e}")
+                            
+                            if not should_retry:
+                                response.raise_for_status()
 
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        if data_str.strip() == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(data_str)
-                            if "choices" in data and len(data["choices"]) > 0:
-                                delta = data["choices"][0].get("delta", {})
-                                content = delta.get("content", "")
-                                if content:
-                                    yield content
-                        except json.JSONDecodeError:
+                        if should_retry:
                             continue
+
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                data_str = line[6:]
+                                if data_str.strip() == "[DONE]":
+                                    break
+                                try:
+                                    data = json.loads(data_str)
+                                    if "choices" in data and len(data["choices"]) > 0:
+                                        delta = data["choices"][0].get("delta", {})
+                                        content = delta.get("content", "")
+                                        if content:
+                                            yield content
+                                except json.JSONDecodeError:
+                                    continue
+                
+                if not should_retry:
+                    break
+
+            except httpx.HTTPStatusError:
+                raise
+            except Exception as e:
+                print(f"Stream error: {e}")
+                raise

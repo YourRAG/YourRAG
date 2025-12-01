@@ -118,6 +118,7 @@ class RAGQueryInput(BaseModel):
 class OpenAIMessage(BaseModel):
     role: str
     content: str
+    name: Optional[str] = None  # OpenAI compatible: optional name field
 
 
 class OpenAIRequest(BaseModel):
@@ -127,7 +128,15 @@ class OpenAIRequest(BaseModel):
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = 1024
     top_k: Optional[int] = None
-    use_history: Optional[bool] = False
+    # use_history is kept for backward compatibility but conversation history
+    # is now always extracted from the messages array (standard OpenAI behavior)
+    use_history: Optional[bool] = True
+    # OpenAI compatible fields (ignored but accepted for compatibility)
+    top_p: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    presence_penalty: Optional[float] = None
+    stop: Optional[List[str]] = None
+    user: Optional[str] = None
 
 
 class RAGResponse(BaseModel):
@@ -1044,14 +1053,24 @@ async def chat_completions(
         )
         distance_threshold = 1.0 - user_similarity
 
-        # Determine search query
+        # Determine search query - use current query for RAG search
         search_query = query
-        if input_data.use_history:
-            # Get up to last 10 messages
-            # Filter out system messages to avoid polluting search with instructions
-            recent_messages = [m for m in input_data.messages if m.role != "system"][-10:]
-            if recent_messages:
-                search_query = "\n".join([m.content for m in recent_messages])
+        
+        # Build conversation history from OpenAI-format messages
+        # Standard OpenAI clients send full conversation history in messages array
+        # We extract all messages except system and current user query as history
+        history_messages = []
+        
+        # Filter out system messages and build history
+        non_system_messages = [m for m in input_data.messages if m.role != "system"]
+        
+        # Remove the last user message (current query) from history to avoid duplication
+        # since it will be added by llm_service wrapped with RAG context
+        if non_system_messages and non_system_messages[-1].role == "user" and non_system_messages[-1].content == query:
+            non_system_messages = non_system_messages[:-1]
+        
+        # Keep conversation history (last 20 messages to maintain context)
+        history_messages = [{"role": m.role, "content": m.content} for m in non_system_messages[-20:]]
 
         results, _ = await store.search(
             user_id=current_user.id,
@@ -1090,6 +1109,7 @@ async def chat_completions(
                 query=query,
                 contexts=results,
                 system_prompt=system_prompt,
+                history=history_messages,
                 temperature=input_data.temperature,
                 max_tokens=input_data.max_tokens,
                 model=input_data.model,
