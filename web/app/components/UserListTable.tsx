@@ -2,7 +2,8 @@ import {
   ShieldAlert,
   CheckCircle,
   Loader2,
-  FileText
+  FileText,
+  Activity
 } from "lucide-react";
 import Link from "next/link";
 import { User } from "../types";
@@ -131,6 +132,13 @@ export default function UserListTable({
                       >
                         <FileText className="w-3 h-3" />
                         Docs
+                      </Link>
+                      <Link
+                        href={`/admin/users/${user.id}/activities`}
+                        className="text-amber-600 hover:text-amber-700 font-medium text-xs px-3 py-1.5 rounded-lg hover:bg-amber-50 transition-colors flex items-center gap-1"
+                      >
+                        <Activity className="w-3 h-3" />
+                        Activity
                       </Link>
                       {user.role !== 'ADMIN' && (
                         user.banned ? (

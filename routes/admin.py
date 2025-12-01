@@ -5,6 +5,8 @@ from typing import Optional, List
 from datetime import datetime
 import uuid
 
+from fastapi import Query
+
 from schemas import (
     BanInput,
     UserResponse,
@@ -12,11 +14,12 @@ from schemas import (
     SystemConfigInput,
     ApiKeyCreateInput,
     ApiKeyResponse,
+    ActivitiesResponse,
 )
 from auth import get_current_user, prisma
 from redis_service import RedisService
 from config_service import config_service
-from activity_service import record_settings_update
+from activity_service import record_settings_update, ActivityService
 
 router = APIRouter()
 
@@ -185,6 +188,35 @@ async def unban_user(user_id: int, current_user=Depends(get_current_user)):
             data={"banned": False, "banReason": None, "bannedAt": None}
         )
         return {"message": "User unbanned successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/users/{user_id}/activities", response_model=ActivitiesResponse)
+async def get_user_activities(
+    user_id: int,
+    limit: int = Query(10, ge=1, le=50, description="Number of activities to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    current_user=Depends(get_current_user)
+):
+    """Get a user's activities (Admin only)."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+    
+    try:
+        user = await prisma.user.find_unique(where={"id": user_id})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        service = ActivityService(prisma)
+        activities = await service.get_user_activities(
+            user_id=user_id, limit=limit, offset=offset
+        )
+        total = await service.get_activity_count(user_id)
+        
+        return ActivitiesResponse(activities=activities, total=total)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
