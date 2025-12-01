@@ -15,6 +15,13 @@
 
 ---
 
+<div align="center">
+  <img src="https://edgeoneimg.cdn.sn/i/692d4f3a78487_1764577082.webp" width="48%" />
+  <img src="https://edgeoneimg.cdn.sn/i/692d4f38e53f0_1764577080.webp" width="45%" />
+</div>
+
+---
+
 # YourRAG 更新日志 (Update Log)
 
 **版本日期**: 2025-12-01
@@ -80,15 +87,20 @@
 * **Turbo 模式**: 开发环境 (`npm run dev`) 启用 Next.js Turbo 模式，显著提升热更新速度。
 * **环境变量**: 调整 `.env.example`，补充 `EMBEDDING_VECTOR_DIMENSION` 配置项。
 
-
+<br/>
 
 ## What is YourRAG / YourRAG 是什么
-![YourRAG](https://edgeoneimg.cdn.sn/i/692b899378285_1764460947.webp)
-![Waving](https://capsule-render.vercel.app/api?section=footer&type=waving&color=gradient&height=100&section=footer)
-![YourRAG](https://edgeoneimg.cdn.sn/i/692ad1d14125b_1764413905.webp)
+
+<div align="center">
+  <img src="https://edgeoneimg.cdn.sn/i/692b899378285_1764460947.webp" width="46%" />
+  <img src="https://edgeoneimg.cdn.sn/i/692ad1d14125b_1764413905.webp" width="48%" />
+</div>
+<br/>
 
 ## How to Deploy YourRAG / 如何部署 YourRAG
 
-![docker](https://edgeoneimg.cdn.sn/i/692ac7d1126c5_1764411345.webp)
-![Waving](https://capsule-render.vercel.app/api?section=footer&type=waving&color=gradient&height=100&section=footer)
-![docker](https://edgeoneimg.cdn.sn/i/692a607a5f68b_1764384890.webp)
+<div align="center">
+  <img src="https://edgeoneimg.cdn.sn/i/692ac7d1126c5_1764411345.webp" width="46%" />
+  <img src="https://edgeoneimg.cdn.sn/i/692a607a5f68b_1764384890.webp" width="48%" />
+</div>
+<br/>
