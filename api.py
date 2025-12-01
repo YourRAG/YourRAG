@@ -61,4 +61,11 @@ app.include_router(codebase_router)
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        "api:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=config.ENVIRONMENT == "development",
+        reload_dirs=["."],
+        reload_excludes=["web/*", ".git/*", "prisma/*", "__pycache__/*"],
+    )
