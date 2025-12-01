@@ -179,6 +179,7 @@ class ConfigService:
             "PRIVATE_KEY": config.PRIVATE_KEY.replace("\\n", "\n") if config.PRIVATE_KEY else "",
             "PUBLIC_KEY": config.PUBLIC_KEY.replace("\\n", "\n") if config.PUBLIC_KEY else "",
             "ENABLE_ACTIVITY_TRACKING": "true",  # Default: Activity tracking is enabled
+            "DISABLE_REGISTRATION": "false",  # Default: Registration is enabled
         }
         
         for key, value in defaults.items():
@@ -194,16 +195,26 @@ class ConfigService:
             await self.load_config()
             
         # Only return non-sensitive configs
-        public_keys = ["ENABLE_ACTIVITY_TRACKING"]
+        public_keys = ["ENABLE_ACTIVITY_TRACKING", "DISABLE_REGISTRATION"]
+        
+        # Default values for public configs
+        defaults = {
+            "ENABLE_ACTIVITY_TRACKING": "true",
+            "DISABLE_REGISTRATION": "false",
+        }
         
         result = {}
         for key in public_keys:
             if key in self._config_cache:
                 result[key] = self._config_cache[key]
-            elif key == "ENABLE_ACTIVITY_TRACKING":
-                result[key] = "true"  # Default value
+            else:
+                result[key] = defaults.get(key, "")
                 
         return result
+
+    def is_registration_disabled(self) -> bool:
+        """Check if new user registration is disabled."""
+        return self._config_cache.get("DISABLE_REGISTRATION", "false").lower() == "true"
 
     def is_activity_tracking_enabled(self) -> bool:
         """Check if activity tracking is enabled."""

@@ -19,6 +19,7 @@ from activity_service import (
     ActivityService,
     record_login,
 )
+from config_service import ConfigService
 import config
 
 router = APIRouter()
@@ -64,8 +65,22 @@ async def github_callback(code: str, request: Request, response: Response):
         user = await prisma.user.find_unique(where={"githubId": str(github_user["id"])})
 
         if not user:
-            # Check if this is the first user
+            # Check if registration is disabled (except for first user who becomes admin)
             user_count = await prisma.user.count()
+            
+            if user_count > 0:
+                # Check if registration is disabled
+                config_service = ConfigService()
+                if config_service.is_registration_disabled():
+                    from urllib.parse import urlencode
+                    error_params = urlencode({
+                        "error": "registration_disabled",
+                        "reason": "New user registration is currently disabled"
+                    })
+                    return RedirectResponse(
+                        url=f"{config.FRONTEND_URL}?{error_params}", status_code=302
+                    )
+            
             role = "ADMIN" if user_count == 0 else "USER"
 
             user = await prisma.user.create(
@@ -142,8 +157,22 @@ async def gitee_callback(code: str, request: Request, response: Response):
         user = await prisma.user.find_unique(where={"giteeId": str(gitee_user["id"])})
 
         if not user:
-            # Check if this is the first user
+            # Check if registration is disabled (except for first user who becomes admin)
             user_count = await prisma.user.count()
+            
+            if user_count > 0:
+                # Check if registration is disabled
+                config_service = ConfigService()
+                if config_service.is_registration_disabled():
+                    from urllib.parse import urlencode
+                    error_params = urlencode({
+                        "error": "registration_disabled",
+                        "reason": "New user registration is currently disabled"
+                    })
+                    return RedirectResponse(
+                        url=f"{config.FRONTEND_URL}?{error_params}", status_code=302
+                    )
+            
             role = "ADMIN" if user_count == 0 else "USER"
 
             user = await prisma.user.create(

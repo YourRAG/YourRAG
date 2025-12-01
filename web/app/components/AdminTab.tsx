@@ -30,6 +30,7 @@ interface UsersResponse {
 
 interface SystemConfig {
   ENABLE_ACTIVITY_TRACKING?: string;
+  DISABLE_REGISTRATION?: string;
   [key: string]: string | undefined;
 }
 
@@ -111,6 +112,11 @@ export default function AdminTab() {
   const handleActivityTrackingToggle = () => {
     const currentValue = systemConfig.ENABLE_ACTIVITY_TRACKING === "true";
     updateConfig("ENABLE_ACTIVITY_TRACKING", (!currentValue).toString());
+  };
+
+  const handleRegistrationToggle = () => {
+    const currentValue = systemConfig.DISABLE_REGISTRATION === "true";
+    updateConfig("DISABLE_REGISTRATION", (!currentValue).toString());
   };
 
   const fetchAdmins = useCallback(async () => {
@@ -287,17 +293,17 @@ export default function AdminTab() {
         <div className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium text-slate-900">Activity Tracking</p>
+              <p className="font-medium text-slate-900">Disable Registration</p>
               <p className="text-sm text-slate-500">
-                Enable or disable user activity tracking (Recent Activity feature)
+                Prevent new users from registering (for private/self-hosted deployments)
               </p>
             </div>
             <button
-              onClick={handleActivityTrackingToggle}
+              onClick={handleRegistrationToggle}
               disabled={configLoading || configSaving}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                systemConfig.ENABLE_ACTIVITY_TRACKING === "true"
-                  ? "bg-blue-600"
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${
+                systemConfig.DISABLE_REGISTRATION === "true"
+                  ? "bg-red-600"
                   : "bg-slate-200"
               } ${(configLoading || configSaving) ? "opacity-50 cursor-not-allowed" : ""}`}
             >
@@ -308,13 +314,47 @@ export default function AdminTab() {
               ) : (
                 <span
                   className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    systemConfig.ENABLE_ACTIVITY_TRACKING === "true"
+                    systemConfig.DISABLE_REGISTRATION === "true"
                       ? "translate-x-6"
                       : "translate-x-1"
                   }`}
                 />
               )}
             </button>
+          </div>
+
+          <div className="border-t border-slate-100 pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-slate-900">Activity Tracking</p>
+                <p className="text-sm text-slate-500">
+                  Enable or disable user activity tracking (Recent Activity feature)
+                </p>
+              </div>
+              <button
+                onClick={handleActivityTrackingToggle}
+                disabled={configLoading || configSaving}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  systemConfig.ENABLE_ACTIVITY_TRACKING === "true"
+                    ? "bg-blue-600"
+                    : "bg-slate-200"
+                } ${(configLoading || configSaving) ? "opacity-50 cursor-not-allowed" : ""}`}
+              >
+                {configSaving ? (
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <Loader2 className="w-3 h-3 animate-spin text-white" />
+                  </span>
+                ) : (
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      systemConfig.ENABLE_ACTIVITY_TRACKING === "true"
+                        ? "translate-x-6"
+                        : "translate-x-1"
+                    }`}
+                  />
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
