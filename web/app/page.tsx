@@ -77,16 +77,11 @@ function HomeContent() {
 
       <header className="sticky top-0 z-50 glass border-b border-slate-200/50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-1.5 sm:p-2 rounded-lg sm:rounded-xl shadow-lg shadow-blue-500/20">
-              <Database className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-900 flex items-center justify-center">
+              <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div className="flex flex-col">
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-none tracking-tight">
-                RAG <span className="hidden sm:inline">Knowledge</span>
-              </h1>
-              <span className="text-[9px] sm:text-[10px] font-medium text-slate-500 uppercase tracking-wider">Base</span>
-            </div>
+            <span className="text-base sm:text-lg font-semibold text-slate-900 tracking-tight">YourRAG</span>
           </div>
           
           <div className="flex items-center gap-2 sm:gap-4">

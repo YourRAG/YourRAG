@@ -21,7 +21,11 @@ import {
   Database,
   FolderOpen,
   Copy,
-  Check
+  Check,
+  RefreshCw,
+  Pencil,
+  RotateCcw,
+  X
 } from "lucide-react";
 import { RAGMessage, SearchResult, DocumentGroup } from "../types";
 import Markdown from "./Markdown";
@@ -56,6 +60,10 @@ export default function AskTab() {
 
   // Clipboard state
   const [copied, setCopied] = useState(false);
+
+  // Edit state
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editingContent, setEditingContent] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -129,21 +137,9 @@ export default function AskTab() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim() || isAsking) return;
-
-    if (!selectedApiKey) {
-      setShowAuthAlert(true);
-      return;
-    }
-
-    const userMessage: RAGMessage = { role: "user", content: query };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
-    setQuery("");
+  // Core send function (reusable for submit, retry, regenerate)
+  const sendMessages = async (messagesToSend: RAGMessage[]) => {
     setIsAsking(true);
-
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/v1/chat/completions`, {
         method: "POST",
@@ -151,9 +147,8 @@ export default function AskTab() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${selectedApiKey}`
         },
-        // credentials: "include", // Removed credentials include as we are using Bearer token
         body: JSON.stringify({
-          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          messages: messagesToSend.map(m => ({ role: m.role, content: m.content })),
           stream: true,
           model: effectiveModel || undefined,
           use_history: useHistory,
@@ -175,7 +170,7 @@ export default function AskTab() {
         reasoning: "",
         sources: [],
       };
-      setMessages((prev) => [...prev, assistantMessage]);
+      setMessages([...messagesToSend, assistantMessage]);
 
       while (true) {
         const { done, value } = await reader.read();
@@ -191,18 +186,15 @@ export default function AskTab() {
 
             try {
               const data = JSON.parse(dataStr);
-              // Handle custom sources extension
               if (data.sources) {
                 assistantMessage = { ...assistantMessage, sources: data.sources };
                 setMessages((prev) => {
-                  const newMessages = [...prev];
-                  newMessages[newMessages.length - 1] = assistantMessage;
-                  return newMessages;
+                  const newMsgs = [...prev];
+                  newMsgs[newMsgs.length - 1] = assistantMessage;
+                  return newMsgs;
                 });
               }
 
-              // Handle reasoning content (thinking models like QwQ, DeepSeek-R1)
-              // Support both field names: reasoning_content and reasoning
               const reasoningDelta = data.choices?.[0]?.delta?.reasoning_content || data.choices?.[0]?.delta?.reasoning;
               if (reasoningDelta) {
                 assistantMessage = {
@@ -210,22 +202,21 @@ export default function AskTab() {
                   reasoning: (assistantMessage.reasoning || "") + reasoningDelta,
                 };
                 setMessages((prev) => {
-                  const newMessages = [...prev];
-                  newMessages[newMessages.length - 1] = assistantMessage;
-                  return newMessages;
+                  const newMsgs = [...prev];
+                  newMsgs[newMsgs.length - 1] = assistantMessage;
+                  return newMsgs;
                 });
               }
 
-              // Handle OpenAI compatible content delta
               if (data.choices && data.choices[0]?.delta?.content) {
                 assistantMessage = {
                   ...assistantMessage,
                   content: assistantMessage.content + data.choices[0].delta.content,
                 };
                 setMessages((prev) => {
-                  const newMessages = [...prev];
-                  newMessages[newMessages.length - 1] = assistantMessage;
-                  return newMessages;
+                  const newMsgs = [...prev];
+                  newMsgs[newMsgs.length - 1] = assistantMessage;
+                  return newMsgs;
                 });
               }
             } catch {
@@ -239,31 +230,109 @@ export default function AskTab() {
     } catch (error) {
       console.error(error);
       setMessages((prev) => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1] = {
+        const newMsgs = [...prev];
+        newMsgs[newMsgs.length - 1] = {
           role: "assistant",
           content:
             "Sorry, an error occurred while processing your question. Please make sure the backend is running.",
         };
-        return newMessages;
+        return newMsgs;
       });
     } finally {
       setIsAsking(false);
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!query.trim() || isAsking) return;
+
+    if (!selectedApiKey) {
+      setShowAuthAlert(true);
+      return;
+    }
+
+    const userMessage: RAGMessage = { role: "user", content: query };
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setQuery("");
+    await sendMessages(newMessages);
+  };
+
+  // Regenerate last AI response
+  const handleRegenerate = async () => {
+    if (isAsking || messages.length < 2) return;
+    if (!selectedApiKey) {
+      setShowAuthAlert(true);
+      return;
+    }
+
+    // Get all messages except the last AI response
+    const lastAssistantIdx = messages.length - 1;
+    if (messages[lastAssistantIdx]?.role !== "assistant") return;
+    
+    const messagesWithoutLastAI = messages.slice(0, lastAssistantIdx);
+    setMessages(messagesWithoutLastAI);
+    await sendMessages(messagesWithoutLastAI);
+  };
+
+  // Retry from a specific user message (clear all messages after it and resend)
+  const handleRetryFromMessage = async (idx: number) => {
+    if (isAsking) return;
+    if (!selectedApiKey) {
+      setShowAuthAlert(true);
+      return;
+    }
+    if (messages[idx]?.role !== "user") return;
+
+    // Keep messages up to and including this user message
+    const messagesToKeep = messages.slice(0, idx + 1);
+    setMessages(messagesToKeep);
+    await sendMessages(messagesToKeep);
+  };
+
+  // Start editing a user message
+  const handleStartEdit = (idx: number) => {
+    if (messages[idx]?.role !== "user") return;
+    setEditingIdx(idx);
+    setEditingContent(messages[idx].content);
+  };
+
+  // Save edited message and resend
+  const handleSaveEdit = async () => {
+    if (editingIdx === null || isAsking) return;
+    if (!selectedApiKey) {
+      setShowAuthAlert(true);
+      return;
+    }
+    if (!editingContent.trim()) return;
+
+    // Replace the message at editingIdx and remove all messages after it
+    const newMessages = messages.slice(0, editingIdx);
+    newMessages.push({ role: "user", content: editingContent.trim() });
+    
+    setEditingIdx(null);
+    setEditingContent("");
+    setMessages(newMessages);
+    await sendMessages(newMessages);
+  };
+
+  // Cancel editing
+  const handleCancelEdit = () => {
+    setEditingIdx(null);
+    setEditingContent("");
+  };
+
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-10rem)] sm:h-[calc(100vh-12rem)] max-w-7xl mx-auto gap-6 relative">
-      {/* Mobile Settings Toggle */}
-      <div className="lg:hidden mb-4 flex justify-end">
-        <button
-          onClick={() => setShowMobileSettings(!showMobileSettings)}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 shadow-sm"
-        >
-          <Settings className="w-4 h-4" />
-          {showMobileSettings ? "Hide Settings" : "Show Settings"}
-        </button>
-      </div>
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-8rem)] sm:h-[calc(100vh-10rem)] lg:h-[calc(100vh-12rem)] max-w-7xl mx-auto lg:gap-6 relative">
+      {/* Mobile Settings Toggle - Fixed at top right */}
+      <button
+        onClick={() => setShowMobileSettings(!showMobileSettings)}
+        className="lg:hidden fixed top-20 right-4 z-30 p-2.5 bg-white border border-slate-200 rounded-full shadow-lg text-slate-700 hover:bg-slate-50 transition-colors"
+        aria-label="Settings"
+      >
+        <Settings className="w-4 h-4" />
+      </button>
 
       {/* Left Sidebar - Configuration Panel */}
       <div className={`
@@ -539,7 +608,7 @@ export default function AskTab() {
       </div>
 
       {/* Right Area - Chat Interface */}
-      <div className="flex-1 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden h-full">
+      <div className="flex-1 flex flex-col bg-white lg:rounded-xl lg:border lg:border-slate-200 lg:shadow-sm overflow-hidden h-full">
         <div className="flex-1 overflow-y-auto space-y-4 p-4 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
@@ -577,69 +646,118 @@ export default function AskTab() {
             messages.map((msg, idx) => (
               <div
                 key={idx}
-                className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                className={`group flex gap-2 sm:gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 {msg.role === "assistant" && (
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mt-1">
-                    <Bot className="w-5 h-5 text-blue-600" />
+                  <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-100 flex items-center justify-center mt-1">
+                    <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
                   </div>
                 )}
                 <div
                   className={`max-w-[85%] sm:max-w-[80%] ${msg.role === "user" ? "order-1" : ""}`}
                 >
-                  <div
-                    className={`rounded-2xl px-4 py-3 ${
-                      msg.role === "user"
-                        ? "bg-blue-600 text-white"
-                        : "bg-white border border-slate-200 text-slate-700 shadow-sm"
-                    }`}
-                  >
-                    <div className="text-sm leading-relaxed">
-                      {msg.role === "user" ? (
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                      ) : (
-                        <>
-                          {/* Show reasoning/thinking content if available */}
-                          {msg.reasoning && (
-                            <div className="mb-3">
-                              <button
-                                onClick={() => setShowReasoning(showReasoning === idx ? null : idx)}
-                                className="flex items-center gap-1.5 text-xs font-medium text-purple-600 hover:text-purple-700 mb-2 transition-colors"
-                              >
-                                <Brain className="w-3.5 h-3.5" />
-                                {showReasoning === idx ? "Hide Thinking" : "Show Thinking"}
-                                {showReasoning === idx ? (
-                                  <ChevronUp className="w-3 h-3" />
-                                ) : (
-                                  <ChevronDown className="w-3 h-3" />
-                                )}
-                              </button>
-                              {showReasoning === idx && (
-                                <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-xs text-purple-800 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                                  <Markdown content={msg.reasoning} />
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {/* Show thinking status when only reasoning is streaming */}
-                          {isAsking && idx === messages.length - 1 && msg.reasoning && !msg.content && (
-                            <div className="flex items-center gap-2 text-purple-600 mb-2">
-                              <Brain className="w-4 h-4 animate-pulse" />
-                              <span className="text-xs">Thinking...</span>
-                            </div>
-                          )}
-                          <Markdown
-                            content={
-                              msg.content ||
-                              (isAsking && idx === messages.length - 1 && !msg.reasoning
-                                ? "Thinking..."
-                                : "")
-                            }
-                          />
-                        </>
-                      )}
+                  {/* Edit mode for user messages */}
+                  {msg.role === "user" && editingIdx === idx ? (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={editingContent}
+                        onChange={(e) => setEditingContent(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        rows={3}
+                        autoFocus
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={handleCancelEdit}
+                          className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveEdit}
+                          disabled={!editingContent.trim() || isAsking}
+                          className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                        >
+                          Save & Send
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div
+                      className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 ${
+                        msg.role === "user"
+                          ? "bg-blue-600 text-white"
+                          : "bg-white border border-slate-200 text-slate-700 shadow-sm"
+                      }`}
+                    >
+                      <div className="text-sm leading-relaxed">
+                        {msg.role === "user" ? (
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        ) : (
+                          <>
+                            {/* Show reasoning/thinking content if available */}
+                            {msg.reasoning && (
+                              <div className="mb-3">
+                                <button
+                                  onClick={() => setShowReasoning(showReasoning === idx ? null : idx)}
+                                  className="flex items-center gap-1.5 text-xs font-medium text-purple-600 hover:text-purple-700 mb-2 transition-colors"
+                                >
+                                  <Brain className="w-3.5 h-3.5" />
+                                  {showReasoning === idx ? "Hide Thinking" : "Show Thinking"}
+                                  {showReasoning === idx ? (
+                                    <ChevronUp className="w-3 h-3" />
+                                  ) : (
+                                    <ChevronDown className="w-3 h-3" />
+                                  )}
+                                </button>
+                                {showReasoning === idx && (
+                                  <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-xs text-purple-800 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <Markdown content={msg.reasoning} />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {/* Show thinking status when only reasoning is streaming */}
+                            {isAsking && idx === messages.length - 1 && msg.reasoning && !msg.content && (
+                              <div className="flex items-center gap-2 text-purple-600 mb-2">
+                                <Brain className="w-4 h-4 animate-pulse" />
+                                <span className="text-xs">Thinking...</span>
+                              </div>
+                            )}
+                            <Markdown
+                              content={
+                                msg.content ||
+                                (isAsking && idx === messages.length - 1 && !msg.reasoning
+                                  ? "Thinking..."
+                                  : "")
+                              }
+                            />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {/* Action buttons for messages */}
+                  {msg.role === "user" && editingIdx !== idx && (
+                    <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                      <button
+                        onClick={() => handleStartEdit(idx)}
+                        disabled={isAsking}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+                        title="Edit message"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleRetryFromMessage(idx)}
+                        disabled={isAsking}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+                        title="Retry from here"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                   {msg.role === "assistant" &&
                     msg.sources &&
                     msg.sources.length > 0 && (
@@ -683,10 +801,22 @@ export default function AskTab() {
                         )}
                       </div>
                     )}
+                  {/* Regenerate button for last assistant message */}
+                  {msg.role === "assistant" && idx === messages.length - 1 && !isAsking && (
+                    <div className="flex gap-1 mt-2">
+                      <button
+                        onClick={handleRegenerate}
+                        className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Regenerate
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {msg.role === "user" && (
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center order-2 mt-1">
-                    <User className="w-5 h-5 text-slate-600" />
+                {msg.role === "user" && editingIdx !== idx && (
+                  <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-200 flex items-center justify-center order-2 mt-1">
+                    <User className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
                   </div>
                 )}
               </div>
@@ -695,7 +825,19 @@ export default function AskTab() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="p-4 bg-slate-50 border-t border-slate-200">
+        <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200">
+          {/* Regenerate button when there are messages and not asking */}
+          {messages.length >= 2 && messages[messages.length - 1]?.role === "assistant" && !isAsking && (
+            <div className="flex justify-center mb-3">
+              <button
+                onClick={handleRegenerate}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Regenerate response
+              </button>
+            </div>
+          )}
           <form
             onSubmit={handleSubmit}
             className="flex gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400 transition-all"
@@ -704,8 +846,8 @@ export default function AskTab() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask a question about your documents..."
-              className="flex-1 px-4 py-2 bg-transparent text-slate-900 placeholder-slate-400 focus:outline-none"
+              placeholder="Ask a question..."
+              className="flex-1 min-w-0 px-3 sm:px-4 py-2 bg-transparent text-slate-900 placeholder-slate-400 focus:outline-none text-sm"
               disabled={isAsking}
             />
             <button
