@@ -63,6 +63,9 @@ export default function DemoTab() {
   
   // Step 3: Chat
   const [chatQuery, setChatQuery] = useState("Explain AI in simple terms");
+  const [chatGroupName, setChatGroupName] = useState("");
+  const [models, setModels] = useState<{ id: string }[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
   const [step3Status, setStep3Status] = useState<StepStatus>({ completed: false, loading: false });
   const [messages, setMessages] = useState<Message[]>([]);
   
@@ -92,8 +95,31 @@ export default function DemoTab() {
       }
     };
 
+    const fetchModels = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/v1/models`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setModels(data.data || []);
+          if (data.data && data.data.length > 0) {
+            setSelectedModel(data.data[0].id);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch models", e);
+      }
+    };
+
     fetchApiKeys();
+    fetchModels();
   }, []);
+
+  // Compute effective model with group suffix
+  const effectiveModel = chatGroupName.trim()
+    ? `${selectedModel}-${chatGroupName.trim()}`
+    : selectedModel;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -196,6 +222,7 @@ export default function DemoTab() {
         },
         body: JSON.stringify({
           messages: [{ role: "user", content: chatQuery }],
+          model: effectiveModel || undefined,
           stream: true,
           temperature: 0.7,
           max_tokens: 1024,
@@ -270,10 +297,9 @@ export default function DemoTab() {
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${selectedApiKey || 'YOUR_API_KEY'}" \\
   -d '{
+    "model": "${effectiveModel || 'default'}",
     "messages": [{"role": "user", "content": "${chatQuery}"}],
-    "stream": true,
-    "temperature": 0.7,
-    "max_tokens": 1024
+    "stream": true
   }'`;
 
   return (
@@ -603,18 +629,58 @@ export default function DemoTab() {
           </div>
           
           <div className="p-6 space-y-4">
-            <div className="flex items-end gap-4">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-slate-700 mb-2">Your Question</label>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Your Question</label>
+              <input
+                type="text"
+                value={chatQuery}
+                onChange={(e) => setChatQuery(e.target.value)}
+                className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Ask a question..."
+              />
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Model</label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {models.length > 0 ? (
+                    models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.id}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Loading models...</option>
+                  )}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Document Group <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
                 <input
                   type="text"
-                  value={chatQuery}
-                  onChange={(e) => setChatQuery(e.target.value)}
+                  value={chatGroupName}
+                  onChange={(e) => setChatGroupName(e.target.value)}
                   className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Ask a question..."
+                  placeholder="e.g., AI Knowledge"
                 />
               </div>
-              
+            </div>
+            
+            {chatGroupName.trim() && (
+              <p className="text-xs text-green-600 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                RAG will search only in &quot;{chatGroupName.trim()}&quot; group (model: {effectiveModel})
+              </p>
+            )}
+            
+            <div className="flex justify-end">
               <button
                 onClick={handleChat}
                 disabled={step3Status.loading || !chatQuery.trim()}

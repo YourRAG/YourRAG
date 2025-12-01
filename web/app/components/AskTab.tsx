@@ -503,18 +503,20 @@ export default function AskTab() {
                 )}
               </button>
             </div>
-            <div className="p-3 overflow-x-auto">
-              <pre className="text-xs font-mono whitespace-pre leading-relaxed">
-                <span className="text-purple-400">curl</span> -X POST{" "}
+            <div className="p-4 overflow-x-auto">
+              <pre className="text-sm font-mono text-blue-400 whitespace-pre">
+                <span className="text-purple-400">curl</span>{" "}
+                <span className="text-blue-300">-X</span>{" "}
+                <span className="text-yellow-400">POST</span>{" "}
                 <span className="text-green-400">&quot;{origin}/v1/chat/completions&quot;</span>{" "}
                 \{"\n"}
-                {"  "}-H{" "}
+                {"  "}<span className="text-blue-300">-H</span>{" "}
                 <span className="text-green-400">&quot;Content-Type: application/json&quot;</span>{" "}
                 \{"\n"}
-                {"  "}-H{" "}
+                {"  "}<span className="text-blue-300">-H</span>{" "}
                 <span className="text-green-400">&quot;Authorization: Bearer {selectedApiKey ? selectedApiKey.slice(0, 12) + "..." : "YOUR_API_KEY"}&quot;</span>{" "}
                 \{"\n"}
-                {"  "}-d{" "}
+                {"  "}<span className="text-blue-300">-d</span>{" "}
                 <span className="text-green-400">&apos;{"{"}{"\n"}</span>
                 <span className="text-green-400">{"    "}&quot;model&quot;: &quot;{effectiveModel || "default"}&quot;,{"\n"}</span>
                 <span className="text-green-400">{"    "}&quot;messages&quot;: [{"{"}&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;...&quot;{"}"}],{"\n"}</span>
@@ -551,26 +553,26 @@ export default function AskTab() {
                 Configure your search parameters on the left, then ask questions about your knowledge base.
                 I&apos;ll retrieve relevant documents and generate answers based on your settings.
               </p>
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 max-w-lg w-full text-left">
-                <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                  <Tag className="w-4 h-4 text-green-600" />
-                  Group Filtering via Model Name
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 sm:p-4 max-w-lg w-full text-left">
+                <h3 className="text-xs sm:text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                  <Tag className="w-3 h-3 sm:w-4 sm:h-4 text-green-600" />
+                  Group Filtering
                 </h3>
-                <p className="text-xs text-slate-600 mb-3">
-                  Filter RAG search by document group using the model name format:
+                <p className="text-[10px] sm:text-xs text-slate-600 mb-2 sm:mb-3">
+                  Add group name to model to filter documents:
                 </p>
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-start gap-2">
-                    <code className="bg-slate-100 px-2 py-1 rounded text-slate-800 font-mono shrink-0">gpt-4o-mini</code>
-                    <span className="text-slate-500 pt-0.5">Search all documents</span>
+                <div className="space-y-1.5 sm:space-y-2 text-[10px] sm:text-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
+                    <code className="bg-slate-100 px-2 py-1 rounded text-slate-800 font-mono text-[10px] sm:text-xs">model</code>
+                    <span className="text-slate-500">Search all documents</span>
                   </div>
-                  <div className="flex items-start gap-2">
-                    <code className="bg-slate-100 px-2 py-1 rounded text-slate-800 font-mono shrink-0">gpt-4o-mini-AI Knowledge</code>
-                    <span className="text-slate-500 pt-0.5">Search only &quot;AI Knowledge&quot; group</span>
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
+                    <code className="bg-slate-100 px-2 py-1 rounded text-slate-800 font-mono text-[10px] sm:text-xs">model-GroupName</code>
+                    <span className="text-slate-500">Search only that group</span>
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-3">
-                  If the group doesn&apos;t exist, it will automatically fall back to searching all documents.
+                <p className="text-[9px] sm:text-[10px] text-slate-400 mt-2 sm:mt-3">
+                  If group doesn&apos;t exist, falls back to all documents.
                 </p>
               </div>
             </div>
