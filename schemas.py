@@ -47,6 +47,8 @@ class DocumentItem(BaseModel):
     metadata: Dict[str, Any]
     created_at: Optional[str] = None
     group: Optional[DocumentGroup] = None
+    vector_dim: Optional[int] = None
+    vector_preview: Optional[List[float]] = None
 
 
 class PaginatedDocumentsResponse(BaseModel):
@@ -90,6 +92,24 @@ class GroupExportRequest(BaseModel):
 class GroupImportRequest(BaseModel):
     import_data: Dict[str, Any]
     use_existing_vectors: bool = False
+
+
+class SmartChunkRequest(BaseModel):
+    """Request for smart document chunking."""
+    content: str
+
+
+class ChunkSuggestion(BaseModel):
+    """A suggested chunk with start and end positions."""
+    start: int
+    end: int
+    summary: str
+
+
+class SmartChunkResponse(BaseModel):
+    """Response containing chunked document segments."""
+    chunks: List[str]
+    chunk_count: int
 
 
 # =====================

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Loader2, Database, Tag, Link as LinkIcon, Trash2, CheckSquare, Square, FolderPlus, Folder, FolderOpen, Edit2, Download, Upload, X, AlertTriangle, Info, ExternalLink } from "lucide-react";
+import { Loader2, Database, Tag, Link as LinkIcon, Trash2, CheckSquare, Square, FolderPlus, Folder, FolderOpen, Edit2, Download, Upload, X, AlertTriangle, Info, ExternalLink, Cpu } from "lucide-react";
 import { DocumentItem, PaginatedDocumentsResponse, DocumentGroup } from "../types";
 import Pagination from "./Pagination";
 import { ConfirmModal, AlertModal } from "./Modal";
@@ -372,11 +372,11 @@ export default function ManageTab() {
   };
 
   const handleDeleteClick = (docId: number) => {
-    setConfirmModal({ isOpen: true, docId, groupId: null });
+    setConfirmModal({ isOpen: true, docId });
   };
 
   const handleBatchDeleteClick = () => {
-    setConfirmModal({ isOpen: true, docId: null, groupId: null });
+    setConfirmModal({ isOpen: true, docId: null });
   };
   
   const handleAssignToGroup = async (targetGroupId: number | null) => {
@@ -737,6 +737,20 @@ export default function ManageTab() {
                         <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
                             ID: {doc.id}
                         </span>
+                        {doc.vector_dim && (
+                            <span
+                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium bg-gradient-to-r from-cyan-50 to-slate-50 text-cyan-700 border border-cyan-100/50 font-mono"
+                                title={`Embedding: ${doc.vector_dim} dimensions${doc.vector_preview ? '\n[' + doc.vector_preview.map(v => v.toFixed(3)).join(', ') + ', ...]' : ''}`}
+                            >
+                                <Cpu className="w-3 h-3 text-cyan-500" />
+                                <span className="text-cyan-600">{doc.vector_dim}d</span>
+                                {doc.vector_preview && (
+                                    <span className="text-slate-400 text-[10px] tracking-tight">
+                                        [{doc.vector_preview.slice(0, 3).map(v => v.toFixed(2)).join(',')}...]
+                                    </span>
+                                )}
+                            </span>
+                        )}
                         {/* Show folder badge if viewing all documents and doc belongs to a folder */}
                         {selectedGroupId === null && doc.group && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">

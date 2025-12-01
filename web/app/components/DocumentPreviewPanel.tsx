@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
-import { FileText, ChevronRight, Hash } from "lucide-react";
+import { useMemo, useState } from "react";
+import { FileText, ChevronRight, Hash, Scissors, Loader2, Sparkles } from "lucide-react";
 import Markdown from "./Markdown";
 
 interface DocumentPreviewPanelProps {
   content: string;
   onDocumentClick: (index: number, startPos: number) => void;
   activeDocIndex?: number;
+  onChunkDocument?: (docIndex: number, chunks: string[]) => void;
+  onChunkAll?: (allChunks: string[]) => void;
 }
 
 interface ParsedDocument {
@@ -19,11 +21,18 @@ interface ParsedDocument {
   preview: string;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 export default function DocumentPreviewPanel({
   content,
   onDocumentClick,
   activeDocIndex,
+  onChunkDocument,
+  onChunkAll,
 }: DocumentPreviewPanelProps) {
+  const [chunkingIndex, setChunkingIndex] = useState<number | null>(null);
+  const [chunkingAll, setChunkingAll] = useState(false);
+
   const documents = useMemo((): ParsedDocument[] => {
     if (!content.trim()) return [];
 
@@ -66,6 +75,73 @@ export default function DocumentPreviewPanel({
     return result;
   }, [content]);
 
+  const handleChunkSingle = async (docIndex: number, docContent: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onChunkDocument || chunkingIndex !== null || chunkingAll) return;
+    
+    setChunkingIndex(docIndex);
+    try {
+      const res = await fetch(`${API_URL}/documents/smart-chunk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content: docContent }),
+      });
+      
+      if (!res.ok) {
+        throw new Error("Failed to chunk document");
+      }
+      
+      const data = await res.json();
+      if (data.chunks && data.chunks.length > 0) {
+        onChunkDocument(docIndex, data.chunks);
+      }
+    } catch (error) {
+      console.error("Chunking error:", error);
+    } finally {
+      setChunkingIndex(null);
+    }
+  };
+
+  const handleChunkAll = async () => {
+    if (!onChunkAll || chunkingAll || chunkingIndex !== null) return;
+    if (documents.length === 0) return;
+    
+    setChunkingAll(true);
+    try {
+      const allChunks: string[] = [];
+      
+      for (const doc of documents) {
+        const res = await fetch(`${API_URL}/documents/smart-chunk`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ content: doc.content }),
+        });
+        
+        if (!res.ok) {
+          allChunks.push(doc.content);
+          continue;
+        }
+        
+        const data = await res.json();
+        if (data.chunks && data.chunks.length > 0) {
+          allChunks.push(...data.chunks);
+        } else {
+          allChunks.push(doc.content);
+        }
+      }
+      
+      if (allChunks.length > 0) {
+        onChunkAll(allChunks);
+      }
+    } catch (error) {
+      console.error("Chunk all error:", error);
+    } finally {
+      setChunkingAll(false);
+    }
+  };
+
   if (documents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8">
@@ -87,18 +163,35 @@ export default function DocumentPreviewPanel({
             {documents.length} Document{documents.length !== 1 ? "s" : ""}
           </span>
         </div>
-        <span className="text-xs text-slate-400">
-          {content.length.toLocaleString()} chars total
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400">
+            {content.length.toLocaleString()} chars
+          </span>
+          {onChunkAll && documents.length > 0 && (
+            <button
+              onClick={handleChunkAll}
+              disabled={chunkingAll || chunkingIndex !== null}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Smart chunk all documents"
+            >
+              {chunkingAll ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Sparkles className="w-3 h-3" />
+              )}
+              <span className="hidden sm:inline">Chunk All</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Document List */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {documents.map((doc) => (
-          <button
+          <div
             key={doc.index}
             onClick={() => onDocumentClick(doc.index, doc.startPos)}
-            className={`w-full text-left p-3 rounded-xl border transition-all group hover:shadow-md ${
+            className={`w-full text-left p-3 rounded-xl border transition-all group hover:shadow-md cursor-pointer ${
               activeDocIndex === doc.index
                 ? "bg-blue-50 border-blue-200 shadow-sm"
                 : "bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50/50"
@@ -119,18 +212,38 @@ export default function DocumentPreviewPanel({
                   {doc.charCount.toLocaleString()} chars
                 </span>
               </div>
-              <ChevronRight
-                className={`w-4 h-4 transition-transform ${
-                  activeDocIndex === doc.index
-                    ? "text-blue-500"
-                    : "text-slate-300 group-hover:text-blue-400 group-hover:translate-x-0.5"
-                }`}
-              />
+              <div className="flex items-center gap-1">
+                {onChunkDocument && (
+                  <button
+                    onClick={(e) => handleChunkSingle(doc.index, doc.content, e)}
+                    disabled={chunkingIndex !== null || chunkingAll}
+                    className={`p-1.5 rounded-md transition-colors ${
+                      chunkingIndex === doc.index
+                        ? "bg-amber-100 text-amber-600"
+                        : "text-slate-400 hover:text-amber-600 hover:bg-amber-50 opacity-0 group-hover:opacity-100"
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    title="Smart chunk this document"
+                  >
+                    {chunkingIndex === doc.index ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Scissors className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
+                <ChevronRight
+                  className={`w-4 h-4 transition-transform ${
+                    activeDocIndex === doc.index
+                      ? "text-blue-500"
+                      : "text-slate-300 group-hover:text-blue-400 group-hover:translate-x-0.5"
+                  }`}
+                />
+              </div>
             </div>
             <div className="text-sm text-slate-600 leading-relaxed line-clamp-3">
               {doc.preview}
             </div>
-          </button>
+          </div>
         ))}
       </div>
 

@@ -3,6 +3,8 @@
 from fastapi import APIRouter, HTTPException, Query, Depends, UploadFile, File, Form
 from typing import Optional, List
 
+import json
+
 from schemas import (
     DocumentInput,
     BatchDeleteInput,
@@ -17,6 +19,8 @@ from schemas import (
     MoveDocumentInput,
     GroupExportRequest,
     GroupImportRequest,
+    SmartChunkRequest,
+    SmartChunkResponse,
 )
 from auth import get_current_user, get_chat_user, prisma
 from document_store import DocumentStore
@@ -26,6 +30,7 @@ from activity_service import (
     record_document_delete,
     record_search,
 )
+from llm_service import LLMService
 
 router = APIRouter()
 store = DocumentStore()
@@ -207,6 +212,132 @@ async def add_document(doc: DocumentInput, current_user=Depends(get_chat_user)):
         return {"id": doc_id, "message": "Document added successfully", "groupId": group_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documents/smart-chunk", response_model=SmartChunkResponse)
+async def smart_chunk_document(
+    request: SmartChunkRequest,
+    current_user=Depends(get_chat_user)
+):
+    """
+    Use LLM to intelligently chunk a document into semantic segments.
+    
+    The LLM analyzes the document structure and content to determine
+    optimal split points based on semantic boundaries like:
+    - Topic changes
+    - Section headers
+    - Logical paragraph groupings
+    - Natural content breaks
+    """
+    try:
+        content = request.content.strip()
+        if not content:
+            raise HTTPException(status_code=400, detail="Content cannot be empty")
+        
+        if len(content) < 100:
+            return SmartChunkResponse(chunks=[content], chunk_count=1)
+        
+        llm = LLMService()
+        
+        system_prompt = """You are a document segmentation expert. Your task is to analyze the given text and split it into logical, semantic chunks.
+
+Rules:
+1. Each chunk should be a coherent, self-contained unit of information
+2. Split at natural boundaries: topic changes, section headers, logical breaks
+3. Each chunk should be between 200-1500 characters ideally
+4. Preserve complete sentences and paragraphs - never break mid-sentence
+5. Return ONLY a valid JSON array of strings, where each string is a chunk
+6. Do NOT add any explanation, markdown, or other text - ONLY the JSON array
+
+Example output format:
+["First chunk content here...", "Second chunk content here...", "Third chunk content here..."]"""
+
+        user_prompt = f"""Analyze and split the following document into semantic chunks. Return ONLY a JSON array of chunk strings:
+
+---
+{content}
+---
+
+Remember: Return ONLY the JSON array, no other text."""
+
+        response = llm.chat_completion(
+            query=user_prompt,
+            contexts=[],
+            system_prompt=system_prompt,
+            temperature=0.3,
+            max_tokens=4096
+        )
+        
+        response_text = response.strip()
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            response_text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+        
+        try:
+            chunks = json.loads(response_text)
+            if not isinstance(chunks, list):
+                raise ValueError("Response is not a list")
+            chunks = [str(chunk).strip() for chunk in chunks if str(chunk).strip()]
+        except (json.JSONDecodeError, ValueError):
+            chunks = smart_fallback_chunk(content)
+        
+        if not chunks:
+            chunks = [content]
+        
+        return SmartChunkResponse(chunks=chunks, chunk_count=len(chunks))
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Smart chunking error: {e}")
+        chunks = smart_fallback_chunk(request.content)
+        return SmartChunkResponse(chunks=chunks, chunk_count=len(chunks))
+
+
+def smart_fallback_chunk(content: str, max_chunk_size: int = 1000) -> List[str]:
+    """
+    Fallback chunking when LLM fails.
+    Splits by paragraphs and respects sentence boundaries.
+    """
+    paragraphs = content.split("\n\n")
+    chunks = []
+    current_chunk = ""
+    
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        
+        if len(current_chunk) + len(para) + 2 <= max_chunk_size:
+            if current_chunk:
+                current_chunk += "\n\n" + para
+            else:
+                current_chunk = para
+        else:
+            if current_chunk:
+                chunks.append(current_chunk)
+            if len(para) <= max_chunk_size:
+                current_chunk = para
+            else:
+                sentences = para.replace(". ", ".|").split("|")
+                for sentence in sentences:
+                    sentence = sentence.strip()
+                    if not sentence:
+                        continue
+                    if len(current_chunk) + len(sentence) + 1 <= max_chunk_size:
+                        if current_chunk:
+                            current_chunk += " " + sentence
+                        else:
+                            current_chunk = sentence
+                    else:
+                        if current_chunk:
+                            chunks.append(current_chunk)
+                        current_chunk = sentence
+    
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    return chunks if chunks else [content]
 
 
 @router.post("/documents/parse")

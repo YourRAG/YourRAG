@@ -305,28 +305,74 @@ class DocumentStore:
 
         total = await self.db.document.count(where=where_clause)
 
-        docs = await self.db.document.find_many(
-            where=where_clause,
-            take=limit,
-            skip=offset,
-            order={"id": "desc"},
-            include={"group": True}
-        )
+        # Use raw SQL to get vector dimension info and preview
+        if group_id is not None:
+            query = """
+                SELECT d.id, d.content, d.metadata, d."createdAt",
+                       CASE WHEN d.embedding IS NOT NULL THEN vector_dims(d.embedding) ELSE NULL END as vector_dim,
+                       CASE WHEN d.embedding IS NOT NULL THEN (d.embedding::text) ELSE NULL END as embedding_preview,
+                       g.id as group_id, g.name as group_name, g."createdAt" as group_created_at
+                FROM "Document" d
+                LEFT JOIN "DocumentGroup" g ON d."groupId" = g.id
+                WHERE d."userId" = $1 AND d."groupId" = $2
+                ORDER BY d.id DESC
+                LIMIT $3 OFFSET $4
+            """
+            docs = await self.db.query_raw(query, user_id, group_id, limit, offset)
+        else:
+            query = """
+                SELECT d.id, d.content, d.metadata, d."createdAt",
+                       CASE WHEN d.embedding IS NOT NULL THEN vector_dims(d.embedding) ELSE NULL END as vector_dim,
+                       CASE WHEN d.embedding IS NOT NULL THEN (d.embedding::text) ELSE NULL END as embedding_preview,
+                       g.id as group_id, g.name as group_name, g."createdAt" as group_created_at
+                FROM "Document" d
+                LEFT JOIN "DocumentGroup" g ON d."groupId" = g.id
+                WHERE d."userId" = $1
+                ORDER BY d.id DESC
+                LIMIT $2 OFFSET $3
+            """
+            docs = await self.db.query_raw(query, user_id, limit, offset)
 
         documents = []
         for doc in docs:
             group_data = None
-            if doc.group:
-                group_data = doc.group.dict()
-                if 'createdAt' in group_data and hasattr(group_data['createdAt'], 'isoformat'):
-                    group_data['createdAt'] = group_data['createdAt'].isoformat()
+            if doc.get("group_id"):
+                group_created = doc.get("group_created_at")
+                if hasattr(group_created, 'isoformat'):
+                    group_created = group_created.isoformat()
+                group_data = {
+                    "id": doc["group_id"],
+                    "name": doc["group_name"],
+                    "createdAt": group_created
+                }
+
+            created_at = doc["createdAt"]
+            if hasattr(created_at, 'isoformat'):
+                created_at = created_at.isoformat()
+
+            metadata = doc["metadata"]
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata)
+
+            # Extract first 4 values from embedding for preview
+            vector_preview = None
+            if doc.get("embedding_preview"):
+                try:
+                    emb_str = doc["embedding_preview"].strip("[]")
+                    if emb_str:
+                        values = [float(x) for x in emb_str.split(",")[:4]]
+                        vector_preview = values
+                except (ValueError, AttributeError):
+                    pass
 
             documents.append({
-                "id": doc.id,
-                "content": doc.content,
-                "metadata": json.loads(doc.metadata) if isinstance(doc.metadata, str) else doc.metadata,
-                "created_at": doc.createdAt.isoformat(),
-                "group": group_data
+                "id": doc["id"],
+                "content": doc["content"],
+                "metadata": metadata,
+                "created_at": created_at,
+                "group": group_data,
+                "vector_dim": doc.get("vector_dim"),
+                "vector_preview": vector_preview
             })
 
         return documents, total

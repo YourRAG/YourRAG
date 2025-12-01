@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon, FileUp, PanelLeftClose, PanelLeft } from "lucide-react";
+import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon, FileUp, PanelLeftClose, PanelLeft, Sparkles } from "lucide-react";
 import DocumentPreviewPanel from "./DocumentPreviewPanel";
 
 interface DocumentGroup {
@@ -18,6 +18,7 @@ export default function AddDocumentTab() {
   const docFileInputRef = useRef<HTMLInputElement>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
+  const [isChunking, setIsChunking] = useState(false);
   const [message, setMessage] = useState("");
   const [showCurl, setShowCurl] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -119,6 +120,82 @@ export default function AddDocumentTab() {
       currentPos = endPos + 8; // 8 is length of "--------"
     }
   }, [content]);
+
+  // Handle chunking a single document
+  const handleChunkDocument = useCallback((docIndex: number, chunks: string[]) => {
+    if (chunks.length <= 1) return;
+    
+    const separator = "\n\n--------\n\n";
+    const parts = content.split("--------");
+    const docs: { content: string; index: number }[] = [];
+    
+    parts.forEach((part) => {
+      const trimmed = part.trim();
+      if (trimmed.length > 0) {
+        docs.push({ content: trimmed, index: docs.length });
+      }
+    });
+    
+    if (docIndex >= docs.length) return;
+    
+    // Replace the document at docIndex with chunked versions
+    const newDocs = [...docs];
+    newDocs.splice(docIndex, 1, ...chunks.map((c, i) => ({ content: c.trim(), index: docIndex + i })));
+    
+    const newContent = newDocs.map(d => d.content).join(separator);
+    setContent(newContent);
+    setMessage(`Document split into ${chunks.length} chunks`);
+    setTimeout(() => setMessage(""), 3000);
+  }, [content]);
+
+  // Handle chunking all documents
+  const handleChunkAll = useCallback((allChunks: string[]) => {
+    if (allChunks.length === 0) return;
+    
+    const separator = "\n\n--------\n\n";
+    const newContent = allChunks.map(c => c.trim()).filter(c => c.length > 0).join(separator);
+    setContent(newContent);
+    setMessage(`All documents split into ${allChunks.length} chunks`);
+    setTimeout(() => setMessage(""), 3000);
+  }, []);
+
+  // Smart chunk the entire content directly
+  const handleSmartChunk = async () => {
+    if (!content.trim() || isChunking) return;
+    
+    setIsChunking(true);
+    setMessage("Analyzing document structure...");
+    
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/documents/smart-chunk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content: content.trim() }),
+      });
+      
+      if (!res.ok) {
+        throw new Error("Failed to chunk document");
+      }
+      
+      const data = await res.json();
+      if (data.chunks && data.chunks.length > 1) {
+        const separator = "\n\n--------\n\n";
+        const newContent = data.chunks.map((c: string) => c.trim()).filter((c: string) => c.length > 0).join(separator);
+        setContent(newContent);
+        setMessage(`Content split into ${data.chunks.length} chunks`);
+      } else {
+        setMessage("Content is already well-structured");
+      }
+      setTimeout(() => setMessage(""), 3000);
+    } catch (error) {
+      console.error("Chunking error:", error);
+      setMessage("Error: Failed to analyze document");
+      setTimeout(() => setMessage(""), 3000);
+    } finally {
+      setIsChunking(false);
+    }
+  };
 
   const insertSeparator = () => {
     setContent((prev) => {
@@ -322,6 +399,8 @@ export default function AddDocumentTab() {
                 content={content}
                 onDocumentClick={handleDocumentClick}
                 activeDocIndex={activeDocIndex}
+                onChunkDocument={handleChunkDocument}
+                onChunkAll={handleChunkAll}
               />
             </div>
           )}
@@ -490,6 +569,17 @@ export default function AddDocumentTab() {
                         <Split className="w-3 h-3" />
                         <span className="hidden xs:inline">Separator</span>
                         <span className="xs:hidden">Sep</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSmartChunk}
+                        disabled={isChunking || !content.trim()}
+                        className="text-xs flex items-center gap-1 text-amber-600 hover:text-amber-700 font-medium px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Smart Chunk: Use AI to split content into semantic segments"
+                      >
+                        {isChunking ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        <span className="hidden xs:inline">Smart Chunk</span>
+                        <span className="xs:hidden">AI</span>
                       </button>
                     </div>
                   </div>
@@ -805,6 +895,17 @@ export default function AddDocumentTab() {
                     <Split className="w-3 h-3" />
                     <span className="hidden sm:inline">Insert Separator</span>
                     <span className="sm:hidden">Sep</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSmartChunk}
+                    disabled={isChunking || !content.trim()}
+                    className="text-xs flex items-center gap-1 sm:gap-1.5 text-amber-600 hover:text-amber-700 font-medium px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Smart Chunk: Use AI to intelligently split content into semantic segments"
+                  >
+                    {isChunking ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    <span className="hidden sm:inline">Smart Chunk</span>
+                    <span className="sm:hidden">AI</span>
                   </button>
                 </div>
               </div>

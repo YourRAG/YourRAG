@@ -79,6 +79,8 @@ export interface DocumentItem {
   metadata: Record<string, unknown>;
   created_at: string;
   group?: DocumentGroup | null;
+  vector_dim?: number | null;
+  vector_preview?: number[] | null;
 }
 
 export interface PaginatedDocumentsResponse {
