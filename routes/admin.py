@@ -1,0 +1,273 @@
+"""Admin routes including user management, system config, and API keys."""
+
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional, List
+from datetime import datetime
+import uuid
+
+from schemas import (
+    BanInput,
+    UserResponse,
+    UpdateSettingsInput,
+    SystemConfigInput,
+    ApiKeyCreateInput,
+    ApiKeyResponse,
+)
+from auth import get_current_user, prisma
+from redis_service import RedisService
+from config_service import config_service
+from activity_service import record_settings_update
+
+router = APIRouter()
+
+
+# =====================
+# System Routes
+# =====================
+
+
+@router.get("/system/instances")
+async def get_active_instances():
+    """Get list of active backend instances connected to Redis."""
+    try:
+        instances = await RedisService.get_active_instances()
+        return {"count": len(instances), "instances": instances}
+    except Exception:
+        return {"count": 0, "instances": []}
+
+
+@router.get("/system/config")
+async def get_public_config():
+    """Get public system configurations (no authentication required)."""
+    try:
+        configs = await config_service.get_public_configs()
+        return configs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/config")
+async def get_system_config(current_user=Depends(get_current_user)):
+    """Get all system configurations (Admin only)."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+    
+    try:
+        configs = await config_service.get_all_configs()
+        return configs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/admin/config")
+async def update_system_config(input_data: SystemConfigInput, current_user=Depends(get_current_user)):
+    """Update system configurations (Admin only)."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+    
+    try:
+        for key, value in input_data.configs.items():
+            await config_service.set_config(key, value)
+        return {"message": "Configuration updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/stats")
+async def get_admin_stats(current_user=Depends(get_current_user)):
+    """Get admin statistics."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+    
+    try:
+        total_users = await prisma.user.count()
+        total_documents = await prisma.document.count()
+        total_activities = await prisma.activity.count()
+        
+        return {
+            "totalUsers": total_users,
+            "totalDocuments": total_documents,
+            "totalActivities": total_activities
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# User Management Routes
+# =====================
+
+
+@router.get("/admin/users")
+async def get_users(
+    page: int = 1,
+    page_size: int = 10,
+    search: Optional[str] = None,
+    role: Optional[str] = None,
+    current_user=Depends(get_current_user)
+):
+    """Get paginated users list."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+    
+    try:
+        skip = (page - 1) * page_size
+        where = {}
+        if search:
+            where["OR"] = [
+                {"username": {"contains": search, "mode": "insensitive"}},
+                {"email": {"contains": search, "mode": "insensitive"}},
+            ]
+        
+        if role:
+            where["role"] = role
+            
+        users = await prisma.user.find_many(
+            where=where,
+            skip=skip,
+            take=page_size,
+            order={"createdAt": "desc"},
+            include={"documents": True}
+        )
+        
+        users_with_count = []
+        for user in users:
+            user_dict = user.dict()
+            user_dict["documentCount"] = len(user.documents)
+            del user_dict["documents"]
+            users_with_count.append(user_dict)
+        
+        total = await prisma.user.count(where=where)
+        
+        return {
+            "users": users_with_count,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/admin/users/{user_id}/ban")
+async def ban_user(user_id: int, input_data: BanInput, current_user=Depends(get_current_user)):
+    """Ban a user."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+        
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot ban yourself")
+
+    try:
+        await prisma.user.update(
+            where={"id": user_id},
+            data={
+                "banned": True,
+                "banReason": input_data.reason,
+                "bannedAt": datetime.utcnow()
+            }
+        )
+        return {"message": "User banned successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/admin/users/{user_id}/unban")
+async def unban_user(user_id: int, current_user=Depends(get_current_user)):
+    """Unban a user."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    try:
+        await prisma.user.update(
+            where={"id": user_id},
+            data={"banned": False, "banReason": None, "bannedAt": None}
+        )
+        return {"message": "User unbanned successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# User Settings Routes
+# =====================
+
+
+@router.put("/user/settings", response_model=UserResponse)
+async def update_user_settings(input_data: UpdateSettingsInput, current_user=Depends(get_current_user)):
+    """Update user settings."""
+    try:
+        if not prisma.is_connected():
+            await prisma.connect()
+
+        user = await prisma.user.update(
+            where={"id": current_user.id},
+            data={
+                "topK": input_data.topK,
+                "similarityThreshold": input_data.similarityThreshold,
+            },
+        )
+
+        await record_settings_update(
+            prisma,
+            current_user.id,
+            f"Updated settings: Top K={input_data.topK}, Threshold={input_data.similarityThreshold}",
+        )
+
+        return user
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# API Key Routes
+# =====================
+
+
+@router.get("/user/apikeys", response_model=List[ApiKeyResponse])
+async def get_api_keys(current_user=Depends(get_current_user)):
+    """Get user's API keys."""
+    try:
+        api_keys = await prisma.apikey.find_many(
+            where={"userId": current_user.id},
+            order={"createdAt": "desc"}
+        )
+        return api_keys
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/user/apikeys", response_model=ApiKeyResponse)
+async def create_api_key(input_data: ApiKeyCreateInput, current_user=Depends(get_current_user)):
+    """Create a new API key."""
+    try:
+        key = f"rag-{uuid.uuid4().hex}"
+        
+        api_key = await prisma.apikey.create(
+            data={
+                "key": key,
+                "name": input_data.name,
+                "userId": current_user.id,
+                "expiresAt": input_data.expiresAt,
+            }
+        )
+        return api_key
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/user/apikeys/{key_id}")
+async def delete_api_key(key_id: int, current_user=Depends(get_current_user)):
+    """Delete an API key."""
+    try:
+        api_key = await prisma.apikey.find_unique(where={"id": key_id})
+        if not api_key or api_key.userId != current_user.id:
+            raise HTTPException(status_code=404, detail="API key not found")
+            
+        await prisma.apikey.delete(where={"id": key_id})
+        return {"message": "API key deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
