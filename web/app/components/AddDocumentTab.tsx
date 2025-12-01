@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus } from "lucide-react";
+import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon } from "lucide-react";
 
 interface DocumentGroup {
   id: number;
@@ -24,6 +24,11 @@ export default function AddDocumentTab() {
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [isCreatingNewGroup, setIsCreatingNewGroup] = useState(false);
+  
+  // Optional metadata (collapsible)
+  const [showOptionalMeta, setShowOptionalMeta] = useState(false);
+  const [category, setCategory] = useState("");
+  const [source, setSource] = useState("");
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -102,8 +107,18 @@ export default function AddDocumentTab() {
     try {
       let successCount = 0;
       
-      // Prepare metadata with group info
-      const metadata: Record<string, unknown> = { category: "", source: "" };
+      // Prepare metadata with group info and optional fields
+      const metadata: Record<string, unknown> = {};
+      
+      // Only include category/source if they have values
+      if (category.trim()) {
+        metadata.category = category.trim();
+      }
+      if (source.trim()) {
+        metadata.source = source.trim();
+      }
+      
+      // Add group info
       if (isCreatingNewGroup && newGroupName.trim()) {
         metadata.groupName = newGroupName.trim();
       } else if (selectedGroupId) {
@@ -147,6 +162,8 @@ export default function AddDocumentTab() {
           : "Document added successfully!"
       );
       setContent("");
+      setCategory("");
+      setSource("");
       setTimeout(() => setMessage(""), 3000);
     } catch (error) {
       console.error(error);
@@ -245,6 +262,57 @@ export default function AddDocumentTab() {
                     className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
                     autoFocus
                   />
+                </div>
+              )}
+            </div>
+
+            {/* Optional Tags - Collapsible */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowOptionalMeta(!showOptionalMeta)}
+                className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                <ChevronDown className={`w-4 h-4 transition-transform ${showOptionalMeta ? 'rotate-180' : ''}`} />
+                <span className="font-medium">Optional Tags</span>
+                <span className="text-xs text-slate-400">(for display only)</span>
+              </button>
+              
+              {showOptionalMeta && (
+                <div className="mt-3 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 animate-in fade-in slide-in-from-top-2">
+                  <p className="text-xs text-slate-500 mb-3">
+                    These tags are for visual organization only and don&apos;t affect search functionality.
+                  </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
+                        <Tag className="w-3 h-3" />
+                        Category
+                      </label>
+                      <input
+                        type="text"
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                        placeholder="e.g., Tutorial, Reference"
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
+                        <LinkIcon className="w-3 h-3" />
+                        Source
+                      </label>
+                      <input
+                        type="text"
+                        value={source}
+                        onChange={(e) => setSource(e.target.value)}
+                        placeholder="e.g., docs.example.com"
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -382,8 +450,9 @@ export default function AddDocumentTab() {
   -d '{
     "content": "Your document content here",
     "metadata": {
-      "category": "example",
-      "groupName": "My Folder"
+      "groupName": "My Folder",
+      "category": "Tutorial",
+      "source": "docs.example.com"
     }
   }'`)}
                       className="text-slate-500 hover:text-white transition-colors"
@@ -400,15 +469,22 @@ export default function AddDocumentTab() {
                       {'  '}-d <span className="text-yellow-400">'{'{'}</span>
                       {'\n    '}<span className="text-orange-400">"content"</span>: <span className="text-green-400">"Your document content here"</span>,
                       {'\n    '}<span className="text-orange-400">"metadata"</span>: <span className="text-yellow-400">{'{'}</span>
-                      {'\n      '}<span className="text-orange-400">"category"</span>: <span className="text-green-400">"example"</span>,
-                      {'\n      '}<span className="text-orange-400">"groupName"</span>: <span className="text-green-400">"My Folder"</span>
+                      {'\n      '}<span className="text-orange-400">"groupName"</span>: <span className="text-green-400">"My Folder"</span>,{' '}<span className="text-slate-500">// optional, creates if not exists</span>
+                      {'\n      '}<span className="text-orange-400">"category"</span>: <span className="text-green-400">"Tutorial"</span>,{' '}<span className="text-slate-500">// optional, display tag</span>
+                      {'\n      '}<span className="text-orange-400">"source"</span>: <span className="text-green-400">"docs.example.com"</span>{' '}<span className="text-slate-500">// optional, display tag</span>
                       {'\n    '}<span className="text-yellow-400">{'}'}</span>
                       {'\n  '}<span className="text-yellow-400">{'}'}'</span>
                     </pre>
                   </div>
-                  <div className="px-4 py-3 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-500 space-y-1">
-                    <div>Replace <span className="font-mono text-slate-400">rag-xxxxxxxxxxxx</span> with your API key from the Manage tab.</div>
-                    <div>Use <span className="font-mono text-slate-400">groupName</span> to add to a folder (creates if not exists), or <span className="font-mono text-slate-400">groupId</span> for existing folder.</div>
+                  <div className="px-4 py-3 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-500 space-y-2">
+                    <div className="font-medium text-slate-400">Available metadata fields (all optional):</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                      <div><span className="font-mono text-green-400">groupName</span> - Add to folder (creates if not exists)</div>
+                      <div><span className="font-mono text-green-400">groupId</span> - Add to existing folder by ID</div>
+                      <div><span className="font-mono text-green-400">category</span> - Display tag (green)</div>
+                      <div><span className="font-mono text-green-400">source</span> - Display tag (purple)</div>
+                    </div>
+                    <div className="pt-1 border-t border-slate-800 mt-2">Replace <span className="font-mono text-slate-400">rag-xxxxxxxxxxxx</span> with your API key.</div>
                   </div>
                 </div>
               )}

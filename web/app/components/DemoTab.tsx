@@ -50,7 +50,9 @@ export default function DemoTab() {
   const [documentContent, setDocumentContent] = useState(
     "Artificial Intelligence (AI) is transforming the way we interact with technology. Machine Learning, a subset of AI, enables computers to learn from data without being explicitly programmed. Deep Learning, using neural networks with many layers, has achieved remarkable results in image recognition, natural language processing, and more."
   );
+  const [documentGroupName, setDocumentGroupName] = useState("AI Knowledge");
   const [documentCategory, setDocumentCategory] = useState("technology");
+  const [documentSource, setDocumentSource] = useState("demo");
   const [step1Status, setStep1Status] = useState<StepStatus>({ completed: false, loading: false });
   
   // Step 2: Search
@@ -106,6 +108,12 @@ export default function DemoTab() {
     setStep1Status({ completed: false, loading: true });
     
     try {
+      // Build metadata object
+      const metadata: Record<string, string> = {};
+      if (documentGroupName.trim()) metadata.groupName = documentGroupName.trim();
+      if (documentCategory.trim()) metadata.category = documentCategory.trim();
+      if (documentSource.trim()) metadata.source = documentSource.trim();
+      
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/documents`, {
         method: "POST",
         headers: {
@@ -114,7 +122,7 @@ export default function DemoTab() {
         },
         body: JSON.stringify({
           content: documentContent,
-          metadata: { category: documentCategory },
+          metadata: metadata,
         }),
       });
       
@@ -245,7 +253,11 @@ export default function DemoTab() {
   -H "Authorization: Bearer ${selectedApiKey || 'YOUR_API_KEY'}" \\
   -d '{
     "content": "${documentContent.replace(/"/g, '\\"').slice(0, 50)}...",
-    "metadata": { "category": "${documentCategory}" }
+    "metadata": {
+      "groupName": "${documentGroupName}",
+      "category": "${documentCategory}",
+      "source": "${documentSource}"
+    }
   }'`;
 
   const curlSearch = `curl -X GET "${origin}/search?query=${encodeURIComponent(searchQuery)}" \\
@@ -348,9 +360,23 @@ export default function DemoTab() {
               />
             </div>
             
-            <div className="flex items-end gap-4">
-              <div className="flex-1 max-w-xs">
-                <label className="block text-sm font-medium text-slate-700 mb-2">Category</label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Folder <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={documentGroupName}
+                  onChange={(e) => setDocumentGroupName(e.target.value)}
+                  className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="e.g., AI Knowledge"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Category <span className="text-slate-400 font-normal">(tag)</span>
+                </label>
                 <input
                   type="text"
                   value={documentCategory}
@@ -359,7 +385,21 @@ export default function DemoTab() {
                   placeholder="e.g., technology"
                 />
               </div>
-              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Source <span className="text-slate-400 font-normal">(tag)</span>
+                </label>
+                <input
+                  type="text"
+                  value={documentSource}
+                  onChange={(e) => setDocumentSource(e.target.value)}
+                  className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="e.g., demo"
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end">
               <button
                 onClick={handleAddDocument}
                 disabled={step1Status.loading || !documentContent.trim()}
