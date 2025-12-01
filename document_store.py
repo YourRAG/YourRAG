@@ -196,6 +196,100 @@ class DocumentStore:
             "group": group_data
         }
 
+    async def get_document_with_vector(self, user_id: int, doc_id: int, group_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """Get a single document by ID with its embedding vector.
+        
+        Args:
+            user_id: The user ID
+            doc_id: The document ID
+            group_id: Optional group ID to filter by
+            
+        Returns:
+            Document with content, metadata, and embedding vector
+        """
+        if group_id is not None:
+            query = """
+                SELECT d.id, d.content, d.metadata, d.embedding::text as embedding_text,
+                       d."createdAt", d."updatedAt", g.id as group_id, g.name as group_name
+                FROM "Document" d
+                LEFT JOIN "DocumentGroup" g ON d."groupId" = g.id
+                WHERE d.id = $1 AND d."userId" = $2 AND d."groupId" = $3
+            """
+            result = await self.db.query_raw(query, doc_id, user_id, group_id)
+        else:
+            query = """
+                SELECT d.id, d.content, d.metadata, d.embedding::text as embedding_text,
+                       d."createdAt", d."updatedAt", g.id as group_id, g.name as group_name
+                FROM "Document" d
+                LEFT JOIN "DocumentGroup" g ON d."groupId" = g.id
+                WHERE d.id = $1 AND d."userId" = $2
+            """
+            result = await self.db.query_raw(query, doc_id, user_id)
+
+        if not result:
+            return None
+
+        doc = result[0]
+        
+        # Parse embedding from text format [x,y,z,...] to list
+        embedding = None
+        if doc["embedding_text"]:
+            embedding_str = doc["embedding_text"].strip("[]")
+            if embedding_str:
+                embedding = [float(x) for x in embedding_str.split(",")]
+        
+        group_data = None
+        if doc["group_id"]:
+            group_data = {
+                "id": doc["group_id"],
+                "name": doc["group_name"]
+            }
+
+        return {
+            "id": doc["id"],
+            "content": doc["content"],
+            "metadata": json.loads(doc["metadata"]) if isinstance(doc["metadata"], str) else doc["metadata"],
+            "embedding": embedding,
+            "created_at": doc["createdAt"].isoformat() if doc["createdAt"] else None,
+            "updated_at": doc["updatedAt"].isoformat() if doc["updatedAt"] else None,
+            "group": group_data
+        }
+
+    async def get_documents_by_group_name(self, user_id: int, group_name: str) -> Tuple[List[Dict[str, Any]], Optional[int]]:
+        """Get all documents in a group by group name.
+        
+        Args:
+            user_id: The user ID
+            group_name: The group name (case-sensitive)
+            
+        Returns:
+            Tuple of (documents list, group_id) or ([], None) if group not found
+        """
+        # Find group by name
+        group = await self.db.documentgroup.find_first(
+            where={"userId": user_id, "name": group_name}
+        )
+        
+        if not group:
+            return [], None
+        
+        # Get all documents in the group
+        docs = await self.db.document.find_many(
+            where={"groupId": group.id, "userId": user_id},
+            order={"id": "desc"}
+        )
+        
+        documents = []
+        for doc in docs:
+            documents.append({
+                "id": doc.id,
+                "content": doc.content[:200] + "..." if len(doc.content) > 200 else doc.content,
+                "metadata": json.loads(doc.metadata) if isinstance(doc.metadata, str) else doc.metadata,
+                "created_at": doc.createdAt.isoformat()
+            })
+        
+        return documents, group.id
+
     async def get_documents(
         self,
         user_id: int,
@@ -389,6 +483,114 @@ class DocumentStore:
         )
         
         return result
+
+    async def update_document(
+        self,
+        user_id: int,
+        doc_id: int,
+        content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        group_id: Optional[int] = None,
+        update_group: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """Update a document's content and/or metadata.
+        
+        If content is updated, the embedding vector will be regenerated.
+        
+        Args:
+            user_id: The user ID
+            doc_id: The document ID to update
+            content: New content (if None, content is not updated)
+            metadata: New metadata (if None, metadata is not updated)
+            group_id: New group ID (only used if update_group is True)
+            update_group: Whether to update the group assignment
+            
+        Returns:
+            Updated document info or None if document not found
+        """
+        # Verify ownership first
+        doc = await self.db.document.find_first(
+            where={
+                "id": doc_id,
+                "userId": user_id
+            },
+            include={"group": True}
+        )
+
+        if not doc:
+            return None
+
+        # Build update data
+        update_fields = {}
+        
+        # If content is provided, regenerate embedding
+        if content is not None:
+            embedding = self.embedding_service.get_embedding(content)
+            if not embedding:
+                raise ValueError("Failed to generate embedding for document")
+            
+            # Use raw SQL to update content and embedding together
+            metadata_json = json.dumps(metadata if metadata is not None else
+                                       (json.loads(doc.metadata) if isinstance(doc.metadata, str) else doc.metadata))
+            embedding_str = f"[{','.join(map(str, embedding))}]"
+            
+            if update_group:
+                query = """
+                    UPDATE "Document"
+                    SET "content" = $1, "metadata" = $2::jsonb, "embedding" = $3::vector,
+                        "groupId" = $4, "updatedAt" = NOW()
+                    WHERE "id" = $5 AND "userId" = $6
+                    RETURNING id
+                """
+                await self.db.query_raw(query, content, metadata_json, embedding_str, group_id, doc_id, user_id)
+            else:
+                query = """
+                    UPDATE "Document"
+                    SET "content" = $1, "metadata" = $2::jsonb, "embedding" = $3::vector, "updatedAt" = NOW()
+                    WHERE "id" = $4 AND "userId" = $5
+                    RETURNING id
+                """
+                await self.db.query_raw(query, content, metadata_json, embedding_str, doc_id, user_id)
+        else:
+            # Only update metadata and/or group, no embedding regeneration needed
+            if metadata is not None:
+                update_fields["metadata"] = json.dumps(metadata)
+            
+            if update_group:
+                update_fields["groupId"] = group_id
+            
+            if update_fields:
+                update_fields["updatedAt"] = datetime.utcnow()
+                await self.db.document.update(
+                    where={"id": doc_id},
+                    data=update_fields
+                )
+
+        # Fetch and return updated document
+        updated_doc = await self.db.document.find_first(
+            where={"id": doc_id, "userId": user_id},
+            include={"group": True}
+        )
+
+        if not updated_doc:
+            return None
+
+        group_data = None
+        if updated_doc.group:
+            group_data = {
+                "id": updated_doc.group.id,
+                "name": updated_doc.group.name,
+                "createdAt": updated_doc.group.createdAt.isoformat()
+            }
+
+        return {
+            "id": updated_doc.id,
+            "content": updated_doc.content,
+            "metadata": json.loads(updated_doc.metadata) if isinstance(updated_doc.metadata, str) else updated_doc.metadata,
+            "created_at": updated_doc.createdAt.isoformat(),
+            "updated_at": updated_doc.updatedAt.isoformat() if updated_doc.updatedAt else None,
+            "group": group_data
+        }
 
     async def delete_document(self, user_id: int, doc_id: int) -> bool:
         """Delete a document."""

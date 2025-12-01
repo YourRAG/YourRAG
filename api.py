@@ -234,6 +234,14 @@ class GroupAssignInput(BaseModel):
     group_id: Optional[int]
 
 
+class DocumentUpdateInput(BaseModel):
+    """Input for updating a document."""
+    content: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    group_id: Optional[int] = None
+    update_group: bool = False
+
+
 # =====================
 # Auth Routes
 # =====================
@@ -591,6 +599,54 @@ async def delete_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.put("/documents/{doc_id}")
+async def update_document(
+    doc_id: int,
+    data: DocumentUpdateInput,
+    current_user=Depends(get_chat_user)
+):
+    """Update a document by ID (supports API Key authentication).
+    
+    If content is updated, the document will be re-vectorized automatically.
+    
+    Args:
+        doc_id: Document ID to update
+        data: Update data containing:
+            - content: New content (optional, triggers re-vectorization if provided)
+            - metadata: New metadata (optional)
+            - group_id: New group ID (optional, only used if update_group is True)
+            - update_group: Whether to update the group assignment
+    
+    Returns:
+        Updated document info
+    """
+    try:
+        result = await store.update_document(
+            user_id=current_user.id,
+            doc_id=doc_id,
+            content=data.content,
+            metadata=data.metadata,
+            group_id=data.group_id,
+            update_group=data.update_group
+        )
+        
+        if not result:
+            raise HTTPException(
+                status_code=404, detail="Document not found or permission denied"
+            )
+        
+        return {
+            "message": "Document updated successfully",
+            "document": result
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/documents")
 async def add_document(doc: DocumentInput, current_user=Depends(get_chat_user)):
     try:
@@ -851,7 +907,7 @@ async def delete_group(
     delete_documents: bool = Query(False, description="Whether to delete documents in the group"),
     current_user=Depends(get_current_user)
 ):
-    """Delete a document group.
+    """Delete a document group (Web UI - Cookie authentication).
     
     If delete_documents is False (default), documents in the group will be preserved
     and their groupId will be set to null (moved to 'All Documents').
@@ -867,6 +923,492 @@ async def delete_group(
         if result is None:
             raise HTTPException(status_code=404, detail="Group not found")
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# External API Routes (API Key Authentication)
+# =====================
+
+
+@app.delete("/api/documents/{doc_id}")
+async def api_delete_document(
+    doc_id: int,
+    current_user=Depends(get_chat_user)
+):
+    """Delete a document by ID (supports API Key authentication).
+    
+    This endpoint is designed for external programs to delete documents.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Args:
+        doc_id: Document ID to delete
+    
+    Returns:
+        Success message
+    """
+    try:
+        deleted = await store.delete_document(user_id=current_user.id, doc_id=doc_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=404, detail="Document not found or permission denied"
+            )
+
+        # Record activity
+        await record_document_delete(prisma, current_user.id, doc_id)
+
+        return {"message": "Document deleted successfully", "id": doc_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BatchDeleteApiInput(BaseModel):
+    ids: List[int]
+
+
+@app.delete("/api/documents/batch")
+async def api_delete_documents_batch(
+    data: BatchDeleteApiInput,
+    current_user=Depends(get_chat_user)
+):
+    """Batch delete documents by IDs (supports API Key authentication).
+    
+    This endpoint is designed for external programs to delete multiple documents at once.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Args:
+        data: Object containing list of document IDs to delete
+    
+    Returns:
+        Success message with count of deleted documents
+    """
+    try:
+        count = await store.delete_documents(user_id=current_user.id, doc_ids=data.ids)
+
+        if count > 0:
+            # Record activity
+            await record_document_delete(prisma, current_user.id, 0)
+
+        return {"message": f"Successfully deleted {count} documents", "deletedCount": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class MoveDocumentInput(BaseModel):
+    group_id: Optional[int] = None
+    group_name: Optional[str] = None
+
+
+@app.put("/api/documents/{doc_id}/move")
+async def api_move_document(
+    doc_id: int,
+    data: MoveDocumentInput,
+    current_user=Depends(get_chat_user)
+):
+    """Move a document to a different group (supports API Key authentication).
+    
+    This endpoint is designed for external programs to move documents between groups.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Set both group_id and group_name to null to remove the document from its group.
+    If group_name is provided (and group_id is not), the group will be created if it doesn't exist.
+    
+    Args:
+        doc_id: Document ID to move
+        data: Target group (by id or name, or null to ungroup)
+    
+    Returns:
+        Updated document info
+    """
+    try:
+        # Determine target group ID
+        target_group_id = None
+        
+        if data.group_id is not None:
+            target_group_id = data.group_id
+            # Verify group exists and belongs to user
+            group = await prisma.documentgroup.find_first(
+                where={"id": target_group_id, "userId": current_user.id}
+            )
+            if not group:
+                raise HTTPException(status_code=404, detail="Target group not found")
+        elif data.group_name is not None and data.group_name.strip():
+            # Find or create group by name
+            target_group_id = await store.find_or_create_group(
+                user_id=current_user.id,
+                name=data.group_name.strip()
+            )
+        
+        # Update document's group
+        result = await store.update_document(
+            user_id=current_user.id,
+            doc_id=doc_id,
+            group_id=target_group_id,
+            update_group=True
+        )
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        return {
+            "message": "Document moved successfully",
+            "document": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/documents/{doc_id}")
+async def api_update_document(
+    doc_id: int,
+    data: DocumentUpdateInput,
+    current_user=Depends(get_chat_user)
+):
+    """Update a document by ID (supports API Key authentication).
+    
+    This endpoint is designed for external programs to update documents.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    If content is updated, the document will be re-vectorized automatically.
+    
+    Args:
+        doc_id: Document ID to update
+        data: Update data containing:
+            - content: New content (optional, triggers re-vectorization if provided)
+            - metadata: New metadata (optional)
+            - group_id: New group ID (optional, only used if update_group is True)
+            - update_group: Whether to update the group assignment
+    
+    Returns:
+        Updated document info
+    """
+    try:
+        result = await store.update_document(
+            user_id=current_user.id,
+            doc_id=doc_id,
+            content=data.content,
+            metadata=data.metadata,
+            group_id=data.group_id,
+            update_group=data.update_group
+        )
+        
+        if not result:
+            raise HTTPException(
+                status_code=404, detail="Document not found or permission denied"
+            )
+        
+        return {
+            "message": "Document updated successfully",
+            "document": result
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/stats")
+async def api_get_stats(current_user=Depends(get_chat_user)):
+    """Get user statistics (supports API Key authentication).
+    
+    This endpoint is designed for external programs to get statistics.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Returns:
+        Statistics including total documents, groups, and usage info
+    """
+    try:
+        total_documents = await store.get_total_documents(user_id=current_user.id)
+        groups = await store.get_groups(user_id=current_user.id)
+        total_groups = len(groups)
+        
+        return {
+            "totalDocuments": total_documents,
+            "totalGroups": total_groups,
+            "groups": groups
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/groups", response_model=List[DocumentGroup])
+async def api_list_groups(current_user=Depends(get_chat_user)):
+    """Get all document groups for the current user (supports API Key authentication).
+    
+    This endpoint is designed for external programs to list groups.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Returns:
+        List of document groups with id, name, createdAt, and documentCount
+    """
+    try:
+        return await store.get_groups(user_id=current_user.id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/groups", response_model=DocumentGroup)
+async def api_create_group(group: DocumentGroupInput, current_user=Depends(get_chat_user)):
+    """Create a new document group (supports API Key authentication).
+    
+    This endpoint is designed for external programs to create groups.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Args:
+        group: Group name
+    
+    Returns:
+        Created group info
+    """
+    try:
+        return await store.create_group(user_id=current_user.id, name=group.name)
+    except Exception as e:
+        if "Unique constraint failed" in str(e):
+            raise HTTPException(status_code=400, detail="Group with this name already exists")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/groups/{group_id}", response_model=DocumentGroup)
+async def api_update_group(group_id: int, group: DocumentGroupInput, current_user=Depends(get_chat_user)):
+    """Update a document group by ID (supports API Key authentication).
+    
+    This endpoint is designed for external programs to rename groups.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Args:
+        group_id: Group ID
+        group: New group name
+    
+    Returns:
+        Updated group info
+    """
+    try:
+        result = await store.update_group(user_id=current_user.id, group_id=group_id, name=group.name)
+        if not result:
+            raise HTTPException(status_code=404, detail="Group not found")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        if "Unique constraint failed" in str(e):
+            raise HTTPException(status_code=400, detail="Group with this name already exists")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/groups/by-name/{group_name}", response_model=DocumentGroup)
+async def api_update_group_by_name(group_name: str, group: DocumentGroupInput, current_user=Depends(get_chat_user)):
+    """Update a document group by name (supports API Key authentication).
+    
+    This endpoint is designed for external programs to rename groups using the current name.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Args:
+        group_name: Current group name (case-sensitive)
+        group: New group name
+    
+    Returns:
+        Updated group info
+    """
+    try:
+        # Find group by name
+        existing = await prisma.documentgroup.find_first(
+            where={"userId": current_user.id, "name": group_name}
+        )
+        if not existing:
+            raise HTTPException(status_code=404, detail=f"Group '{group_name}' not found")
+        
+        result = await store.update_group(user_id=current_user.id, group_id=existing.id, name=group.name)
+        if not result:
+            raise HTTPException(status_code=404, detail="Group not found")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        if "Unique constraint failed" in str(e):
+            raise HTTPException(status_code=400, detail="Group with this name already exists")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/groups/by-name/{group_name}/documents")
+async def api_list_documents_by_group_name(
+    group_name: str,
+    current_user=Depends(get_chat_user)
+):
+    """List all documents in a group by group name (supports API Key authentication).
+    
+    This endpoint is designed for external programs to list documents in a specific group.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Args:
+        group_name: Group name (case-sensitive)
+    
+    Returns:
+        List of documents with id, content preview, metadata, and created_at
+    """
+    try:
+        documents, group_id = await store.get_documents_by_group_name(
+            user_id=current_user.id,
+            group_name=group_name
+        )
+        
+        if group_id is None:
+            raise HTTPException(status_code=404, detail=f"Group '{group_name}' not found")
+        
+        return {
+            "groupId": group_id,
+            "groupName": group_name,
+            "documents": documents,
+            "total": len(documents)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/groups/by-name/{group_name}/documents/{doc_id}")
+async def api_get_document_in_group(
+    group_name: str,
+    doc_id: int,
+    include_vector: bool = Query(True, description="Whether to include the embedding vector"),
+    current_user=Depends(get_chat_user)
+):
+    """Get a specific document in a group with its embedding vector (supports API Key authentication).
+    
+    This endpoint is designed for external programs to get document details including the vector.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    Args:
+        group_name: Group name (case-sensitive)
+        doc_id: Document ID
+        include_vector: Whether to include the embedding vector (default: True)
+    
+    Returns:
+        Document with content, metadata, and optionally the embedding vector
+    """
+    try:
+        # First find the group
+        group = await prisma.documentgroup.find_first(
+            where={"userId": current_user.id, "name": group_name}
+        )
+        
+        if not group:
+            raise HTTPException(status_code=404, detail=f"Group '{group_name}' not found")
+        
+        if include_vector:
+            document = await store.get_document_with_vector(
+                user_id=current_user.id,
+                doc_id=doc_id,
+                group_id=group.id
+            )
+        else:
+            # Get document without vector
+            document = await store.get_document(
+                user_id=current_user.id,
+                doc_id=doc_id
+            )
+            # Verify it belongs to the group
+            if document and document.get("group") and document["group"].get("id") != group.id:
+                document = None
+        
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document {doc_id} not found in group '{group_name}'"
+            )
+        
+        return document
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/groups/{group_id}")
+async def api_delete_group(
+    group_id: int,
+    delete_documents: bool = Query(True, description="Whether to delete all documents in the group (default: True)"),
+    current_user=Depends(get_chat_user)
+):
+    """Delete a document group by ID (supports API Key authentication).
+    
+    This endpoint is designed for external programs to delete groups.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    By default (delete_documents=True), all documents in the group will be permanently deleted.
+    Set delete_documents=False to preserve documents (their groupId will be set to null).
+    
+    Args:
+        group_id: Group ID to delete
+        delete_documents: Whether to delete all documents in the group (default: True)
+    
+    Returns:
+        Deletion result with count of deleted documents
+    """
+    try:
+        result = await store.delete_group(
+            user_id=current_user.id,
+            group_id=group_id,
+            delete_documents=delete_documents
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="Group not found or permission denied")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/groups/by-name/{group_name}")
+async def api_delete_group_by_name(
+    group_name: str,
+    delete_documents: bool = Query(True, description="Whether to delete all documents in the group (default: True)"),
+    current_user=Depends(get_chat_user)
+):
+    """Delete a document group by name (supports API Key authentication).
+    
+    This endpoint is designed for external programs to delete groups using the group name.
+    Authentication via API Key header: Authorization: Bearer rag-xxx
+    
+    By default (delete_documents=True), all documents in the group will be permanently deleted.
+    Set delete_documents=False to preserve documents (their groupId will be set to null).
+    
+    Args:
+        group_name: Group name to delete (case-sensitive)
+        delete_documents: Whether to delete all documents in the group (default: True)
+    
+    Returns:
+        Deletion result with count of deleted documents
+    """
+    try:
+        # Find group by name
+        group = await prisma.documentgroup.find_first(
+            where={"userId": current_user.id, "name": group_name}
+        )
+        if not group:
+            raise HTTPException(status_code=404, detail=f"Group '{group_name}' not found")
+        
+        result = await store.delete_group(
+            user_id=current_user.id,
+            group_id=group.id,
+            delete_documents=delete_documents
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="Group not found or permission denied")
+        
+        # Add group name to result for clarity
+        result["groupName"] = group_name
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
