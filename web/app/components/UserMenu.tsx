@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { LogOut, User as UserIcon, Github, Play } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogOut, User as UserIcon, Github, Play, Code } from "lucide-react";
 import { User } from "../types";
 
 interface UserMenuProps {
@@ -25,6 +26,7 @@ export default function UserMenu({
 }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -97,6 +99,17 @@ export default function UserMenu({
             )}
           </div>
           
+          <button
+            onClick={() => {
+              router.push("/codebase");
+              setIsOpen(false);
+            }}
+            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <Code className="w-4 h-4" />
+            Code Base
+          </button>
+
           <button
             onClick={() => {
               onDemoClick();
