@@ -372,8 +372,24 @@ class GitHubService:
             return self._split_rust(lines, file_path, repo_url, repo_name)
         elif language in (CodeLanguage.JAVA, CodeLanguage.CSHARP, CodeLanguage.KOTLIN):
             return self._split_java_like(lines, file_path, repo_url, repo_name, language)
+        elif language == CodeLanguage.MARKDOWN:
+            return self._split_markdown(lines, file_path, repo_url, repo_name)
+        elif language in (CodeLanguage.HTML, CodeLanguage.XML):
+            return self._split_html_xml(lines, file_path, repo_url, repo_name, language)
+        elif language == CodeLanguage.CSS:
+            return self._split_css(lines, file_path, repo_url, repo_name)
+        elif language in (CodeLanguage.JSON, CodeLanguage.YAML, CodeLanguage.TOML):
+            return self._split_config(lines, file_path, repo_url, repo_name, language)
+        elif language == CodeLanguage.PHP:
+            return self._split_php(lines, file_path, repo_url, repo_name)
+        elif language == CodeLanguage.RUBY:
+            return self._split_ruby(lines, file_path, repo_url, repo_name)
+        elif language == CodeLanguage.SHELL:
+            return self._split_shell(lines, file_path, repo_url, repo_name)
+        elif language == CodeLanguage.SQL:
+            return self._split_sql(lines, file_path, repo_url, repo_name)
         else:
-            # Default: split by fixed line count
+            # Default: split by fixed line count with smart paragraph detection
             return self._split_by_lines(lines, file_path, repo_url, repo_name, language)
     
     def _split_python(
@@ -849,6 +865,607 @@ class GitHubService:
         
         merged.append(current)
         return merged
+    
+    def _split_markdown(
+        self,
+        lines: List[str],
+        file_path: str,
+        repo_url: str,
+        repo_name: str
+    ) -> List[CodeChunk]:
+        """Split Markdown file by headers."""
+        chunks = []
+        current_chunk_lines = []
+        current_chunk_start = 1
+        current_chunk_type = "section"
+        
+        # Pattern for markdown headers
+        header_pattern = re.compile(r'^#{1,3}\s+.+')
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            # Check for header
+            is_header = header_pattern.match(line)
+            
+            if is_header and current_chunk_lines:
+                # Save current section
+                chunk_content = "\n".join(current_chunk_lines)
+                if chunk_content.strip():
+                    chunks.append(CodeChunk(
+                        content=chunk_content,
+                        file_path=file_path,
+                        start_line=current_chunk_start,
+                        end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                        chunk_type=current_chunk_type,
+                        language="markdown",
+                        repo_url=repo_url,
+                        repo_name=repo_name
+                    ))
+                
+                current_chunk_lines = []
+                current_chunk_start = i + 1
+                current_chunk_type = "section"
+            
+            current_chunk_lines.append(line)
+            i += 1
+        
+        # Save last chunk
+        if current_chunk_lines:
+            chunk_content = "\n".join(current_chunk_lines)
+            if chunk_content.strip():
+                chunks.append(CodeChunk(
+                    content=chunk_content,
+                    file_path=file_path,
+                    start_line=current_chunk_start,
+                    end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                    chunk_type=current_chunk_type,
+                    language="markdown",
+                    repo_url=repo_url,
+                    repo_name=repo_name
+                ))
+        
+        # If small file or no sections, return as single chunk
+        if len(chunks) <= 1 or len(lines) < 50:
+            return [CodeChunk(
+                content="\n".join(lines),
+                file_path=file_path,
+                start_line=1,
+                end_line=len(lines),
+                chunk_type="document",
+                language="markdown",
+                repo_url=repo_url,
+                repo_name=repo_name
+            )]
+        
+        return self._merge_small_chunks(chunks, min_lines=30)
+    
+    def _split_html_xml(
+        self,
+        lines: List[str],
+        file_path: str,
+        repo_url: str,
+        repo_name: str,
+        language: CodeLanguage
+    ) -> List[CodeChunk]:
+        """Split HTML/XML by major sections."""
+        lang_str = language.value
+        chunks = []
+        current_chunk_lines = []
+        current_chunk_start = 1
+        
+        # Patterns for major HTML elements
+        section_pattern = re.compile(
+            r'^\s*<(html|head|body|header|nav|main|section|article|aside|footer|div\s+class|template|script|style)',
+            re.IGNORECASE
+        )
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            is_section = section_pattern.match(line)
+            
+            if is_section and current_chunk_lines and len(current_chunk_lines) > 10:
+                chunk_content = "\n".join(current_chunk_lines)
+                if chunk_content.strip():
+                    chunks.append(CodeChunk(
+                        content=chunk_content,
+                        file_path=file_path,
+                        start_line=current_chunk_start,
+                        end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                        chunk_type="element",
+                        language=lang_str,
+                        repo_url=repo_url,
+                        repo_name=repo_name
+                    ))
+                
+                current_chunk_lines = []
+                current_chunk_start = i + 1
+            
+            current_chunk_lines.append(line)
+            i += 1
+        
+        if current_chunk_lines:
+            chunk_content = "\n".join(current_chunk_lines)
+            if chunk_content.strip():
+                chunks.append(CodeChunk(
+                    content=chunk_content,
+                    file_path=file_path,
+                    start_line=current_chunk_start,
+                    end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                    chunk_type="element",
+                    language=lang_str,
+                    repo_url=repo_url,
+                    repo_name=repo_name
+                ))
+        
+        if len(chunks) <= 1 or len(lines) < self.CHUNK_SIZE:
+            return [CodeChunk(
+                content="\n".join(lines),
+                file_path=file_path,
+                start_line=1,
+                end_line=len(lines),
+                chunk_type="document",
+                language=lang_str,
+                repo_url=repo_url,
+                repo_name=repo_name
+            )]
+        
+        return self._merge_small_chunks(chunks)
+    
+    def _split_css(
+        self,
+        lines: List[str],
+        file_path: str,
+        repo_url: str,
+        repo_name: str
+    ) -> List[CodeChunk]:
+        """Split CSS by rule blocks."""
+        chunks = []
+        current_chunk_lines = []
+        current_chunk_start = 1
+        brace_count = 0
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            brace_count += line.count("{") - line.count("}")
+            current_chunk_lines.append(line)
+            
+            # End of a rule block
+            if brace_count == 0 and current_chunk_lines and len(current_chunk_lines) >= 5:
+                chunk_content = "\n".join(current_chunk_lines)
+                if chunk_content.strip():
+                    chunks.append(CodeChunk(
+                        content=chunk_content,
+                        file_path=file_path,
+                        start_line=current_chunk_start,
+                        end_line=i + 1,
+                        chunk_type="rules",
+                        language="css",
+                        repo_url=repo_url,
+                        repo_name=repo_name
+                    ))
+                current_chunk_lines = []
+                current_chunk_start = i + 2
+            
+            i += 1
+        
+        if current_chunk_lines:
+            chunk_content = "\n".join(current_chunk_lines)
+            if chunk_content.strip():
+                chunks.append(CodeChunk(
+                    content=chunk_content,
+                    file_path=file_path,
+                    start_line=current_chunk_start,
+                    end_line=len(lines),
+                    chunk_type="rules",
+                    language="css",
+                    repo_url=repo_url,
+                    repo_name=repo_name
+                ))
+        
+        if len(chunks) <= 1 or len(lines) < self.CHUNK_SIZE:
+            return [CodeChunk(
+                content="\n".join(lines),
+                file_path=file_path,
+                start_line=1,
+                end_line=len(lines),
+                chunk_type="stylesheet",
+                language="css",
+                repo_url=repo_url,
+                repo_name=repo_name
+            )]
+        
+        return self._merge_small_chunks(chunks)
+    
+    def _split_config(
+        self,
+        lines: List[str],
+        file_path: str,
+        repo_url: str,
+        repo_name: str,
+        language: CodeLanguage
+    ) -> List[CodeChunk]:
+        """Split config files (JSON/YAML/TOML) by top-level keys."""
+        lang_str = language.value
+        
+        # For config files, usually keep as single chunk unless very large
+        if len(lines) <= 200:
+            return [CodeChunk(
+                content="\n".join(lines),
+                file_path=file_path,
+                start_line=1,
+                end_line=len(lines),
+                chunk_type="config",
+                language=lang_str,
+                repo_url=repo_url,
+                repo_name=repo_name
+            )]
+        
+        # For large config files, split by sections
+        chunks = []
+        current_chunk_lines = []
+        current_chunk_start = 1
+        
+        # Pattern for top-level keys in YAML/TOML
+        key_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*\s*[:=]')
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            # Check for top-level key
+            is_key = key_pattern.match(line) and not line.startswith(" ") and not line.startswith("\t")
+            
+            if is_key and current_chunk_lines and len(current_chunk_lines) > 20:
+                chunk_content = "\n".join(current_chunk_lines)
+                if chunk_content.strip():
+                    chunks.append(CodeChunk(
+                        content=chunk_content,
+                        file_path=file_path,
+                        start_line=current_chunk_start,
+                        end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                        chunk_type="section",
+                        language=lang_str,
+                        repo_url=repo_url,
+                        repo_name=repo_name
+                    ))
+                
+                current_chunk_lines = []
+                current_chunk_start = i + 1
+            
+            current_chunk_lines.append(line)
+            i += 1
+        
+        if current_chunk_lines:
+            chunk_content = "\n".join(current_chunk_lines)
+            if chunk_content.strip():
+                chunks.append(CodeChunk(
+                    content=chunk_content,
+                    file_path=file_path,
+                    start_line=current_chunk_start,
+                    end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                    chunk_type="section",
+                    language=lang_str,
+                    repo_url=repo_url,
+                    repo_name=repo_name
+                ))
+        
+        if len(chunks) <= 1:
+            return [CodeChunk(
+                content="\n".join(lines),
+                file_path=file_path,
+                start_line=1,
+                end_line=len(lines),
+                chunk_type="config",
+                language=lang_str,
+                repo_url=repo_url,
+                repo_name=repo_name
+            )]
+        
+        return chunks
+    
+    def _split_php(
+        self,
+        lines: List[str],
+        file_path: str,
+        repo_url: str,
+        repo_name: str
+    ) -> List[CodeChunk]:
+        """Split PHP code by classes and functions."""
+        chunks = []
+        current_chunk_lines = []
+        current_chunk_start = 1
+        current_chunk_type = "module"
+        
+        # Patterns for PHP
+        class_pattern = re.compile(r'^(abstract\s+|final\s+)?class\s+\w+')
+        func_pattern = re.compile(r'^(public|private|protected|static)?\s*(function)\s+\w+')
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.lstrip()
+            
+            is_class = class_pattern.match(stripped)
+            is_func = func_pattern.match(stripped) and not line.startswith(" ") and not line.startswith("\t")
+            
+            if (is_class or is_func) and current_chunk_lines:
+                chunk_content = "\n".join(current_chunk_lines)
+                if chunk_content.strip():
+                    chunks.append(CodeChunk(
+                        content=chunk_content,
+                        file_path=file_path,
+                        start_line=current_chunk_start,
+                        end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                        chunk_type=current_chunk_type,
+                        language="php",
+                        repo_url=repo_url,
+                        repo_name=repo_name
+                    ))
+                
+                current_chunk_lines = []
+                current_chunk_start = i + 1
+                current_chunk_type = "class" if is_class else "function"
+            
+            current_chunk_lines.append(line)
+            i += 1
+        
+        if current_chunk_lines:
+            chunk_content = "\n".join(current_chunk_lines)
+            if chunk_content.strip():
+                chunks.append(CodeChunk(
+                    content=chunk_content,
+                    file_path=file_path,
+                    start_line=current_chunk_start,
+                    end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                    chunk_type=current_chunk_type,
+                    language="php",
+                    repo_url=repo_url,
+                    repo_name=repo_name
+                ))
+        
+        if len(chunks) <= 1 or len(lines) < self.CHUNK_SIZE:
+            return [CodeChunk(
+                content="\n".join(lines),
+                file_path=file_path,
+                start_line=1,
+                end_line=len(lines),
+                chunk_type="module",
+                language="php",
+                repo_url=repo_url,
+                repo_name=repo_name
+            )]
+        
+        return self._merge_small_chunks(chunks)
+    
+    def _split_ruby(
+        self,
+        lines: List[str],
+        file_path: str,
+        repo_url: str,
+        repo_name: str
+    ) -> List[CodeChunk]:
+        """Split Ruby code by classes and methods."""
+        chunks = []
+        current_chunk_lines = []
+        current_chunk_start = 1
+        current_chunk_type = "module"
+        
+        # Patterns for Ruby
+        class_pattern = re.compile(r'^class\s+\w+')
+        module_pattern = re.compile(r'^module\s+\w+')
+        def_pattern = re.compile(r'^def\s+\w+')
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.lstrip()
+            
+            is_class = class_pattern.match(stripped) and not line.startswith(" ")
+            is_module = module_pattern.match(stripped) and not line.startswith(" ")
+            is_def = def_pattern.match(stripped) and not line.startswith(" ")
+            
+            if (is_class or is_module or is_def) and current_chunk_lines:
+                chunk_content = "\n".join(current_chunk_lines)
+                if chunk_content.strip():
+                    chunks.append(CodeChunk(
+                        content=chunk_content,
+                        file_path=file_path,
+                        start_line=current_chunk_start,
+                        end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                        chunk_type=current_chunk_type,
+                        language="ruby",
+                        repo_url=repo_url,
+                        repo_name=repo_name
+                    ))
+                
+                current_chunk_lines = []
+                current_chunk_start = i + 1
+                if is_class:
+                    current_chunk_type = "class"
+                elif is_module:
+                    current_chunk_type = "module"
+                else:
+                    current_chunk_type = "method"
+            
+            current_chunk_lines.append(line)
+            i += 1
+        
+        if current_chunk_lines:
+            chunk_content = "\n".join(current_chunk_lines)
+            if chunk_content.strip():
+                chunks.append(CodeChunk(
+                    content=chunk_content,
+                    file_path=file_path,
+                    start_line=current_chunk_start,
+                    end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                    chunk_type=current_chunk_type,
+                    language="ruby",
+                    repo_url=repo_url,
+                    repo_name=repo_name
+                ))
+        
+        if len(chunks) <= 1 or len(lines) < self.CHUNK_SIZE:
+            return [CodeChunk(
+                content="\n".join(lines),
+                file_path=file_path,
+                start_line=1,
+                end_line=len(lines),
+                chunk_type="script",
+                language="ruby",
+                repo_url=repo_url,
+                repo_name=repo_name
+            )]
+        
+        return self._merge_small_chunks(chunks)
+    
+    def _split_shell(
+        self,
+        lines: List[str],
+        file_path: str,
+        repo_url: str,
+        repo_name: str
+    ) -> List[CodeChunk]:
+        """Split shell scripts by functions."""
+        chunks = []
+        current_chunk_lines = []
+        current_chunk_start = 1
+        current_chunk_type = "script"
+        
+        # Pattern for shell functions
+        func_pattern = re.compile(r'^(\w+)\s*\(\s*\)|^function\s+\w+')
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            is_func = func_pattern.match(line)
+            
+            if is_func and current_chunk_lines:
+                chunk_content = "\n".join(current_chunk_lines)
+                if chunk_content.strip():
+                    chunks.append(CodeChunk(
+                        content=chunk_content,
+                        file_path=file_path,
+                        start_line=current_chunk_start,
+                        end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                        chunk_type=current_chunk_type,
+                        language="shell",
+                        repo_url=repo_url,
+                        repo_name=repo_name
+                    ))
+                
+                current_chunk_lines = []
+                current_chunk_start = i + 1
+                current_chunk_type = "function"
+            
+            current_chunk_lines.append(line)
+            i += 1
+        
+        if current_chunk_lines:
+            chunk_content = "\n".join(current_chunk_lines)
+            if chunk_content.strip():
+                chunks.append(CodeChunk(
+                    content=chunk_content,
+                    file_path=file_path,
+                    start_line=current_chunk_start,
+                    end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                    chunk_type=current_chunk_type,
+                    language="shell",
+                    repo_url=repo_url,
+                    repo_name=repo_name
+                ))
+        
+        if len(chunks) <= 1 or len(lines) < self.CHUNK_SIZE:
+            return [CodeChunk(
+                content="\n".join(lines),
+                file_path=file_path,
+                start_line=1,
+                end_line=len(lines),
+                chunk_type="script",
+                language="shell",
+                repo_url=repo_url,
+                repo_name=repo_name
+            )]
+        
+        return self._merge_small_chunks(chunks)
+    
+    def _split_sql(
+        self,
+        lines: List[str],
+        file_path: str,
+        repo_url: str,
+        repo_name: str
+    ) -> List[CodeChunk]:
+        """Split SQL by statements."""
+        chunks = []
+        current_chunk_lines = []
+        current_chunk_start = 1
+        
+        # Patterns for SQL statements
+        statement_pattern = re.compile(
+            r'^\s*(CREATE|ALTER|DROP|INSERT|UPDATE|DELETE|SELECT|WITH|GRANT|REVOKE)',
+            re.IGNORECASE
+        )
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            is_statement = statement_pattern.match(line)
+            
+            if is_statement and current_chunk_lines and len(current_chunk_lines) > 3:
+                chunk_content = "\n".join(current_chunk_lines)
+                if chunk_content.strip():
+                    chunks.append(CodeChunk(
+                        content=chunk_content,
+                        file_path=file_path,
+                        start_line=current_chunk_start,
+                        end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                        chunk_type="statement",
+                        language="sql",
+                        repo_url=repo_url,
+                        repo_name=repo_name
+                    ))
+                
+                current_chunk_lines = []
+                current_chunk_start = i + 1
+            
+            current_chunk_lines.append(line)
+            i += 1
+        
+        if current_chunk_lines:
+            chunk_content = "\n".join(current_chunk_lines)
+            if chunk_content.strip():
+                chunks.append(CodeChunk(
+                    content=chunk_content,
+                    file_path=file_path,
+                    start_line=current_chunk_start,
+                    end_line=current_chunk_start + len(current_chunk_lines) - 1,
+                    chunk_type="statement",
+                    language="sql",
+                    repo_url=repo_url,
+                    repo_name=repo_name
+                ))
+        
+        if len(chunks) <= 1 or len(lines) < self.CHUNK_SIZE:
+            return [CodeChunk(
+                content="\n".join(lines),
+                file_path=file_path,
+                start_line=1,
+                end_line=len(lines),
+                chunk_type="script",
+                language="sql",
+                repo_url=repo_url,
+                repo_name=repo_name
+            )]
+        
+        return self._merge_small_chunks(chunks)
     
     async def fetch_and_chunk_repo(
         self,
