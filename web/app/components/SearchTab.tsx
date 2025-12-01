@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   Loader2,
@@ -13,8 +13,10 @@ import {
   Code,
   Copy,
   Check,
+  Folder,
+  Database,
 } from "lucide-react";
-import { SearchResult, PaginatedSearchResponse } from "../types";
+import { SearchResult, PaginatedSearchResponse, DocumentGroup } from "../types";
 import { AlertModal } from "./Modal";
 
 export default function SearchTab() {
@@ -26,6 +28,10 @@ export default function SearchTab() {
   const [totalResults, setTotalResults] = useState(0);
   const pageSize = 5;
 
+  // Group filter
+  const [groups, setGroups] = useState<DocumentGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+
   const [alertModal, setAlertModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -36,49 +42,87 @@ export default function SearchTab() {
   const [showCurl, setShowCurl] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Fetch groups on mount
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || ""}/groups`,
+          {
+            credentials: "include",
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setGroups(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch groups:", error);
+      }
+    };
+    fetchGroups();
+  }, []);
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const performSearch = async (searchQuery: string, page: number) => {
-    if (!searchQuery.trim()) return;
+  const performSearch = useCallback(
+    async (searchQuery: string, page: number, groupId: number | null) => {
+      if (!searchQuery.trim()) return;
 
-    setIsSearching(true);
-    try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || ""}/search?query=${encodeURIComponent(searchQuery)}&page=${page}&page_size=${pageSize}`,
-        { credentials: "include" }
-      );
-      if (!res.ok) throw new Error("Search failed");
-      const data: PaginatedSearchResponse = await res.json();
-      setResults(data.results);
-      setTotalPages(data.total_pages);
-      setTotalResults(data.total);
-      setCurrentPage(data.page);
-    } catch (error) {
-      console.error(error);
-      setAlertModal({
-        isOpen: true,
-        title: "Search Failed",
-        message: "Search failed. Make sure the backend is running.",
-        variant: "error",
-      });
-    } finally {
-      setIsSearching(false);
-    }
-  };
+      setIsSearching(true);
+      try {
+        let url = `${
+          process.env.NEXT_PUBLIC_API_URL || ""
+        }/search?query=${encodeURIComponent(
+          searchQuery
+        )}&page=${page}&page_size=${pageSize}`;
+        if (groupId !== null) {
+          url += `&group_id=${groupId}`;
+        }
+
+        const res = await fetch(url, { credentials: "include" });
+        if (!res.ok) throw new Error("Search failed");
+        const data: PaginatedSearchResponse = await res.json();
+        setResults(data.results);
+        setTotalPages(data.total_pages);
+        setTotalResults(data.total);
+        setCurrentPage(data.page);
+      } catch (error) {
+        console.error(error);
+        setAlertModal({
+          isOpen: true,
+          title: "Search Failed",
+          message: "Search failed. Make sure the backend is running.",
+          variant: "error",
+        });
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    []
+  );
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setCurrentPage(1);
-    await performSearch(query, 1);
+    await performSearch(query, 1, selectedGroupId);
   };
 
   const handlePageChange = async (newPage: number) => {
     if (newPage < 1 || newPage > totalPages) return;
-    await performSearch(query, newPage);
+    await performSearch(query, newPage, selectedGroupId);
+  };
+
+  const handleGroupChange = async (groupId: number | null) => {
+    setSelectedGroupId(groupId);
+    if (query.trim()) {
+      setCurrentPage(1);
+      await performSearch(query, 1, groupId);
+    }
   };
 
   return (
@@ -107,25 +151,89 @@ export default function SearchTab() {
         {showCurl && (
           <div className="mb-6 bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-lg animate-in fade-in slide-in-from-top-2">
             <div className="flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800">
-              <div className="text-xs font-medium text-slate-400">cURL Request</div>
+              <div className="text-xs font-medium text-slate-400">
+                cURL Request
+              </div>
               <button
-                onClick={() => copyToClipboard(`curl -X GET "${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/search?query=hello" \\
-  -H "Authorization: Bearer rag-xxxxxxxxxxxx"`)}
+                onClick={() =>
+                  copyToClipboard(`curl -X GET "${
+                    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+                  }/search?query=hello&group_name=My%20Folder" \\
+  -H "Authorization: Bearer rag-xxxxxxxxxxxx"`)
+                }
                 className="text-slate-500 hover:text-white transition-colors"
                 title="Copy to clipboard"
               >
-                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
               </button>
             </div>
             <div className="p-4 overflow-x-auto">
               <pre className="text-sm font-mono text-blue-400 whitespace-pre">
-                <span className="text-purple-400">curl</span> -X GET <span className="text-green-400">"{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/search?query=hello"</span> \{'\n'}
-                {'  '}-H <span className="text-green-400">"Authorization: Bearer rag-xxxxxxxxxxxx"</span>
+                <span className="text-purple-400">curl</span> -X GET{" "}
+                <span className="text-green-400">
+                  "{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}
+                  /search?query=hello&group_name=My%20Folder"
+                </span>{" "}
+                \{"\n"}
+                {"  "}-H{" "}
+                <span className="text-green-400">
+                  "Authorization: Bearer rag-xxxxxxxxxxxx"
+                </span>
               </pre>
             </div>
-            <div className="px-4 py-3 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-500">
-              Replace <span className="font-mono text-slate-400">rag-xxxxxxxxxxxx</span> with your API key from the Manage tab.
+            <div className="px-4 py-3 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-500 space-y-1">
+              <div>
+                Replace{" "}
+                <span className="font-mono text-slate-400">
+                  rag-xxxxxxxxxxxx
+                </span>{" "}
+                with your API key.
+              </div>
+              <div>
+                <span className="font-mono text-green-400">group_name</span> or{" "}
+                <span className="font-mono text-green-400">group_id</span> - optional, omit to search all.
+              </div>
             </div>
+          </div>
+        )}
+
+        {/* Group Filter */}
+        {groups.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-2 items-center">
+            <span className="text-xs font-medium text-slate-500 mr-1">
+              Search in:
+            </span>
+            <button
+              type="button"
+              onClick={() => handleGroupChange(null)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                selectedGroupId === null
+                  ? "bg-blue-100 text-blue-700 border border-blue-300"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-transparent"
+              }`}
+            >
+              <Database className="w-3 h-3" />
+              All Documents
+            </button>
+            {groups.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => handleGroupChange(group.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  selectedGroupId === group.id
+                    ? "bg-blue-100 text-blue-700 border border-blue-300"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-transparent"
+                }`}
+              >
+                <Folder className="w-3 h-3" />
+                {group.name}
+              </button>
+            ))}
           </div>
         )}
 
@@ -185,13 +293,13 @@ export default function SearchTab() {
                 </span>
               </div>
               <div className="flex gap-2">
-                {typeof result.metadata?.category === 'string' && (
+                {typeof result.metadata?.category === "string" && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
                     <Tag className="w-3 h-3" />
                     {result.metadata.category as string}
                   </span>
                 )}
-                {typeof result.metadata?.source === 'string' && (
+                {typeof result.metadata?.source === "string" && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-100">
                     <LinkIcon className="w-3 h-3" />
                     {result.metadata.source as string}
@@ -225,8 +333,7 @@ export default function SearchTab() {
                   return false;
                 })
                 .map((page, index, array) => {
-                  const showEllipsis =
-                    index > 0 && page - array[index - 1] > 1;
+                  const showEllipsis = index > 0 && page - array[index - 1] > 1;
                   return (
                     <div key={page} className="flex items-center gap-1">
                       {showEllipsis && (
@@ -248,9 +355,9 @@ export default function SearchTab() {
                 })}
             </div>
             <div className="sm:hidden flex items-center gap-1">
-               <span className="text-sm text-slate-500">
+              <span className="text-sm text-slate-500">
                 Page {currentPage} of {totalPages}
-               </span>
+              </span>
             </div>
 
             <button

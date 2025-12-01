@@ -57,6 +57,7 @@ export default function DemoTab() {
   
   // Step 2: Search
   const [searchQuery, setSearchQuery] = useState("What is machine learning?");
+  const [searchGroupName, setSearchGroupName] = useState("");
   const [step2Status, setStep2Status] = useState<StepStatus>({ completed: false, loading: false });
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   
@@ -150,14 +151,16 @@ export default function DemoTab() {
     setSearchResults([]);
     
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || ""}/search?query=${encodeURIComponent(searchQuery)}`,
-        {
-          headers: {
-            "Authorization": `Bearer ${selectedApiKey}`,
-          },
-        }
-      );
+      let searchUrl = `${process.env.NEXT_PUBLIC_API_URL || ""}/search?query=${encodeURIComponent(searchQuery)}`;
+      if (searchGroupName.trim()) {
+        searchUrl += `&group_name=${encodeURIComponent(searchGroupName.trim())}`;
+      }
+      
+      const res = await fetch(searchUrl, {
+        headers: {
+          "Authorization": `Bearer ${selectedApiKey}`,
+        },
+      });
       
       if (!res.ok) throw new Error("Search failed");
       
@@ -260,7 +263,7 @@ export default function DemoTab() {
     }
   }'`;
 
-  const curlSearch = `curl -X GET "${origin}/search?query=${encodeURIComponent(searchQuery)}" \\
+  const curlSearch = `curl -X GET "${origin}/search?query=${encodeURIComponent(searchQuery)}${searchGroupName.trim() ? `&group_name=${encodeURIComponent(searchGroupName.trim())}` : ''}" \\
   -H "Authorization: Bearer ${selectedApiKey || 'YOUR_API_KEY'}"`;
 
   const curlChat = `curl -X POST "${origin}/v1/chat/completions" \\
@@ -481,8 +484,8 @@ export default function DemoTab() {
           </div>
           
           <div className="p-6 space-y-4">
-            <div className="flex items-end gap-4">
-              <div className="flex-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-2">Search Query</label>
                 <input
                   type="text"
@@ -492,7 +495,21 @@ export default function DemoTab() {
                   placeholder="Enter your search query..."
                 />
               </div>
-              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Folder <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={searchGroupName}
+                  onChange={(e) => setSearchGroupName(e.target.value)}
+                  className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="e.g., AI Knowledge"
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end">
               <button
                 onClick={handleSearch}
                 disabled={step2Status.loading || !searchQuery.trim()}

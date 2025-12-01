@@ -67,9 +67,18 @@ class DocumentStore:
         query: str,
         threshold: float,
         limit: int = 10,
-        offset: int = 0
+        offset: int = 0,
+        group_id: Optional[int] = None
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Search for similar documents using vector similarity with pagination.
+        
+        Args:
+            user_id: The user ID
+            query: The search query
+            threshold: Distance threshold (1 - similarity)
+            limit: Maximum number of results
+            offset: Offset for pagination
+            group_id: Optional group ID to filter results
         
         Returns:
             Tuple of (results list, total count)
@@ -80,47 +89,67 @@ class DocumentStore:
 
         embedding_str = f"[{','.join(map(str, query_embedding))}]"
 
-        # Calculate total count for this user (approximate or exact depending on needs)
-        # For search results, total usually means "total matches", but with vector search
-        # almost everything matches to some degree.
-        # Here we return the count of documents that satisfy the threshold.
-
         # We use cosine distance (<=> operator in pgvector).
         # Distance = 1 - Cosine Similarity.
         # So if we want similarity >= 0.8, we want distance <= 0.2.
 
-        sql = """
-            SELECT
-                id,
-                content,
-                metadata,
-                (embedding <=> $1::vector) as distance
-            FROM "Document"
-            WHERE "userId" = $2
-              AND (embedding <=> $1::vector) <= $3
-            ORDER BY distance ASC
-            LIMIT $4 OFFSET $5
-        """
+        if group_id is not None:
+            # Search within a specific group
+            sql = """
+                SELECT
+                    id,
+                    content,
+                    metadata,
+                    (embedding <=> $1::vector) as distance
+                FROM "Document"
+                WHERE "userId" = $2
+                  AND "groupId" = $3
+                  AND (embedding <=> $1::vector) <= $4
+                ORDER BY distance ASC
+                LIMIT $5 OFFSET $6
+            """
+            results = await self.db.query_raw(
+                sql, embedding_str, int(user_id), int(group_id), float(threshold), int(limit), int(offset)
+            )
 
-        # Ensure types are native Python types
-        results = await self.db.query_raw(
-            sql, embedding_str, int(user_id), float(threshold), int(limit), int(offset)
-        )
+            count_sql = """
+                SELECT COUNT(*)::int as count
+                FROM "Document"
+                WHERE "userId" = $1
+                  AND "groupId" = $2
+                  AND (embedding <=> $3::vector) <= $4
+            """
+            count_result = await self.db.query_raw(
+                count_sql, user_id, group_id, embedding_str, threshold
+            )
+        else:
+            # Search all documents
+            sql = """
+                SELECT
+                    id,
+                    content,
+                    metadata,
+                    (embedding <=> $1::vector) as distance
+                FROM "Document"
+                WHERE "userId" = $2
+                  AND (embedding <=> $1::vector) <= $3
+                ORDER BY distance ASC
+                LIMIT $4 OFFSET $5
+            """
+            results = await self.db.query_raw(
+                sql, embedding_str, int(user_id), float(threshold), int(limit), int(offset)
+            )
 
-        # Get total count for pagination
-        count_sql = """
-            SELECT COUNT(*)::int as count
-            FROM "Document"
-            WHERE "userId" = $1
-              AND (embedding <=> $2::vector) <= $3
-        """
-
-        count_result = await self.db.query_raw(
-            count_sql,
-            user_id,
-            embedding_str,
-            threshold
-        )
+            count_sql = """
+                SELECT COUNT(*)::int as count
+                FROM "Document"
+                WHERE "userId" = $1
+                  AND (embedding <=> $2::vector) <= $3
+            """
+            count_result = await self.db.query_raw(
+                count_sql, user_id, embedding_str, threshold
+            )
+        
         total = count_result[0]['count'] if count_result else 0
 
         formatted_results = []

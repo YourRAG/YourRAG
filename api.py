@@ -776,9 +776,38 @@ async def search_documents(
     query: str,
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(5, ge=1, le=50, description="Results per page"),
+    group_id: Optional[int] = Query(None, description="Filter by group ID (optional)"),
+    group_name: Optional[str] = Query(None, description="Filter by group name (optional, more user-friendly)"),
     current_user=Depends(get_chat_user),
 ):
+    """Search documents with optional group filtering.
+    
+    You can filter by either group_id or group_name:
+    - group_id: Filter by exact group ID
+    - group_name: Filter by group name (case-sensitive)
+    
+    If both are provided, group_id takes precedence.
+    Omit both to search all documents.
+    """
     try:
+        # Resolve group_name to group_id if provided
+        resolved_group_id = group_id
+        if group_name and not group_id:
+            # Find group by name
+            group = await prisma.documentgroup.find_first(
+                where={"userId": current_user.id, "name": group_name}
+            )
+            if group:
+                resolved_group_id = group.id
+            else:
+                # Group not found, return empty results
+                return PaginatedSearchResponse(
+                    results=[],
+                    total=0,
+                    page=page,
+                    page_size=page_size,
+                    total_pages=0,
+                )
 
         offset = (page - 1) * page_size
         # Use user's similarity threshold for regular search too
@@ -795,6 +824,7 @@ async def search_documents(
             threshold=distance_threshold,
             limit=page_size,
             offset=offset,
+            group_id=resolved_group_id,
         )
         total_pages = (total + page_size - 1) // page_size if total > 0 else 0
 
