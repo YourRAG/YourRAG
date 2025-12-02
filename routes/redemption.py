@@ -86,6 +86,8 @@ async def admin_list_codes(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = Query(None),
+    min_amount: Optional[int] = Query(None, alias="minAmount"),
+    max_amount: Optional[int] = Query(None, alias="maxAmount"),
     current_user=Depends(get_current_user),
     service: RedemptionService = Depends(get_redemption_service),
 ):
@@ -94,7 +96,13 @@ async def admin_list_codes(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
-        result = await service.list_codes(page=page, page_size=page_size, status=status)
+        result = await service.list_codes(
+            page=page,
+            page_size=page_size,
+            status=status,
+            min_amount=min_amount,
+            max_amount=max_amount
+        )
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

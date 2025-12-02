@@ -320,3 +320,81 @@ class RedemptionListResponse(BaseModel):
     total: int
     page: int
     pageSize: int
+
+
+# =====================
+# Export Schemas
+# =====================
+
+
+class ExportUserInfo(BaseModel):
+    id: int
+    username: str
+    email: Optional[str] = None
+    avatarUrl: Optional[str] = None
+    role: str
+    topK: int
+    similarityThreshold: float
+    credits: int
+
+
+class ExportDocumentItem(BaseModel):
+    id: int
+    content: str
+    metadata: Optional[Dict[str, Any]] = None
+    groupId: Optional[int] = None
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
+
+
+class ExportGroupItem(BaseModel):
+    id: int
+    name: str
+    documentCount: int
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
+
+
+class ExportActivityItem(BaseModel):
+    id: int
+    type: str
+    title: str
+    description: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    createdAt: Optional[str] = None
+
+
+class ExportTransactionItem(BaseModel):
+    id: int
+    type: str
+    status: str
+    amount: int
+    balanceBefore: int
+    balanceAfter: int
+    description: str
+    referenceId: Optional[str] = None
+    referenceType: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
+
+
+class ExportApiKeyItem(BaseModel):
+    id: int
+    name: str
+    keyPrefix: Optional[str] = None
+    isActive: bool
+    createdAt: Optional[str] = None
+    expiresAt: Optional[str] = None
+    lastUsedAt: Optional[str] = None
+
+
+class UserDataExportResponse(BaseModel):
+    exportedAt: str
+    version: str
+    user: ExportUserInfo
+    documents: Optional[List[ExportDocumentItem]] = None
+    groups: Optional[List[ExportGroupItem]] = None
+    activities: Optional[List[ExportActivityItem]] = None
+    transactions: Optional[List[ExportTransactionItem]] = None
+    apiKeys: Optional[List[ExportApiKeyItem]] = None

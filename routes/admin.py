@@ -107,6 +107,8 @@ async def get_users(
     page_size: int = 10,
     search: Optional[str] = None,
     role: Optional[str] = None,
+    min_credits: Optional[int] = Query(None, alias="minCredits"),
+    max_credits: Optional[int] = Query(None, alias="maxCredits"),
     current_user=Depends(get_current_user)
 ):
     """Get paginated users list."""
@@ -124,6 +126,13 @@ async def get_users(
         
         if role:
             where["role"] = role
+
+        if min_credits is not None or max_credits is not None:
+            where["credits"] = {}
+            if min_credits is not None:
+                where["credits"]["gte"] = min_credits
+            if max_credits is not None:
+                where["credits"]["lte"] = max_credits
             
         users = await prisma.user.find_many(
             where=where,

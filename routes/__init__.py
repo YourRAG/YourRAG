@@ -9,6 +9,7 @@ from .chat import router as chat_router
 from .codebase import router as codebase_router
 from .credits import router as credits_router
 from .redemption import router as redemption_router
+from .export import router as export_router
 
 __all__ = [
     "auth_router",
@@ -18,4 +19,5 @@ __all__ = [
     "codebase_router",
     "credits_router",
     "redemption_router",
+    "export_router",
 ]

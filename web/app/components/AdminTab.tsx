@@ -51,6 +51,8 @@ export default function AdminTab() {
   const [usersLoading, setUsersLoading] = useState(true);
 
   const [search, setSearch] = useState("");
+  const [minCredits, setMinCredits] = useState("");
+  const [maxCredits, setMaxCredits] = useState("");
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [banReason, setBanReason] = useState("");
   const [showBanModal, setShowBanModal] = useState(false);
@@ -129,8 +131,10 @@ export default function AdminTab() {
         role: "ADMIN"
       });
       if (search) queryParams.append("search", search);
+      if (minCredits) queryParams.append("minCredits", minCredits);
+      if (maxCredits) queryParams.append("maxCredits", maxCredits);
 
-      const res = await fetch(`${API_URL}/admin/users?${queryParams}`, { 
+      const res = await fetch(`${API_URL}/admin/users?${queryParams}`, {
         credentials: "include" 
       });
       
@@ -155,8 +159,10 @@ export default function AdminTab() {
         role: "USER"
       });
       if (search) queryParams.append("search", search);
+      if (minCredits) queryParams.append("minCredits", minCredits);
+      if (maxCredits) queryParams.append("maxCredits", maxCredits);
 
-      const res = await fetch(`${API_URL}/admin/users?${queryParams}`, { 
+      const res = await fetch(`${API_URL}/admin/users?${queryParams}`, {
         credentials: "include" 
       });
       
@@ -184,7 +190,7 @@ export default function AdminTab() {
   useEffect(() => {
     setAdminPage(1);
     setUserPage(1);
-  }, [search]);
+  }, [search, minCredits, maxCredits]);
 
   const handleBanUser = async () => {
     if (!selectedUser) return;
@@ -363,8 +369,25 @@ export default function AdminTab() {
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="flex justify-end">
+      {/* Search and Filters */}
+      <div className="flex flex-col sm:flex-row justify-end gap-3">
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            placeholder="Min Credits"
+            value={minCredits}
+            onChange={(e) => setMinCredits(e.target.value)}
+            className="w-full sm:w-32 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm"
+          />
+          <span className="text-slate-400">-</span>
+          <input
+            type="number"
+            placeholder="Max Credits"
+            value={maxCredits}
+            onChange={(e) => setMaxCredits(e.target.value)}
+            className="w-full sm:w-32 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm"
+          />
+        </div>
         <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input

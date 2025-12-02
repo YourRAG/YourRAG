@@ -14,7 +14,8 @@ from routes import (
     chat_router,
     codebase_router,
     credits_router,
-    redemption_router
+    redemption_router,
+    export_router
 )
 import config
 import uvicorn
@@ -68,6 +69,7 @@ app.include_router(chat_router)
 app.include_router(codebase_router)
 app.include_router(credits_router)
 app.include_router(redemption_router)
+app.include_router(export_router)
 
 
 if __name__ == "__main__":

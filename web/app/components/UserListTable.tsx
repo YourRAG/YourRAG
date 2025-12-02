@@ -58,6 +58,7 @@ export default function UserListTable({
             <tr>
               <th className="px-6 py-4">User</th>
               <th className="px-6 py-4">Role</th>
+              <th className="px-6 py-4">Credits</th>
               <th className="px-6 py-4">Documents</th>
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4">Joined</th>
@@ -67,14 +68,14 @@ export default function UserListTable({
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                   Loading...
                 </td>
               </tr>
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
                   {emptyMessage}
                 </td>
               </tr>
@@ -98,12 +99,15 @@ export default function UserListTable({
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      user.role === 'ADMIN' 
-                        ? 'bg-purple-100 text-purple-700' 
+                      user.role === 'ADMIN'
+                        ? 'bg-purple-100 text-purple-700'
                         : 'bg-slate-100 text-slate-700'
                     }`}>
                       {user.role}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 text-slate-600 font-medium">
+                    {user.credits.toLocaleString()}
                   </td>
                   <td className="px-6 py-4 text-slate-600">
                     {user.documentCount}

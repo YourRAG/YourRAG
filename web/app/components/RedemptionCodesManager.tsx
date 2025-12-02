@@ -11,6 +11,7 @@ import {
   Calendar,
   Gift,
   Trash2,
+  Download,
 } from "lucide-react";
 import { formatDate } from "../utils/format";
 
@@ -36,6 +37,8 @@ export default function RedemptionCodesManager({ apiUrl }: RedemptionCodesManage
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [minAmountFilter, setMinAmountFilter] = useState<string>("");
+  const [maxAmountFilter, setMaxAmountFilter] = useState<string>("");
   const pageSize = 10;
 
   // Generate State
@@ -58,6 +61,12 @@ export default function RedemptionCodesManager({ apiUrl }: RedemptionCodesManage
       if (statusFilter) {
         params.append("status", statusFilter);
       }
+      if (minAmountFilter) {
+        params.append("minAmount", minAmountFilter);
+      }
+      if (maxAmountFilter) {
+        params.append("maxAmount", maxAmountFilter);
+      }
 
       const res = await fetch(`${apiUrl}/redemption/admin/list?${params}`, {
         credentials: "include",
@@ -72,7 +81,7 @@ export default function RedemptionCodesManager({ apiUrl }: RedemptionCodesManage
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, page, statusFilter]);
+  }, [apiUrl, page, statusFilter, minAmountFilter, maxAmountFilter]);
 
   useEffect(() => {
     fetchCodes();
@@ -118,6 +127,21 @@ export default function RedemptionCodesManager({ apiUrl }: RedemptionCodesManage
   const copyAllGenerated = () => {
     const text = generatedCodes.map(c => c.code).join("\n");
     copyToClipboard(text);
+  };
+
+  const handleDownloadTxt = () => {
+    if (generatedCodes.length === 0) return;
+    
+    const text = generatedCodes.map(c => c.code).join("\r\n");
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `redemption_codes_${new Date().toISOString().slice(0, 19).replace(/[:]/g, "-")}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -253,13 +277,22 @@ export default function RedemptionCodesManager({ apiUrl }: RedemptionCodesManage
                       <CheckCircle2 className="w-5 h-5" />
                       <span className="font-medium">{successMsg}</span>
                     </div>
-                    <button
-                      onClick={copyAllGenerated}
-                      className="flex items-center gap-2 text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors font-medium"
-                    >
-                      <Copy className="w-4 h-4" />
-                      Copy All Codes
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleDownloadTxt}
+                        className="flex items-center gap-2 text-sm bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors font-medium"
+                      >
+                        <Download className="w-4 h-4" />
+                        Export TXT
+                      </button>
+                      <button
+                        onClick={copyAllGenerated}
+                        className="flex items-center gap-2 text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors font-medium"
+                      >
+                        <Copy className="w-4 h-4" />
+                        Copy All Codes
+                      </button>
+                    </div>
                   </div>
                   
                   <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 font-mono text-sm">
@@ -280,6 +313,66 @@ export default function RedemptionCodesManager({ apiUrl }: RedemptionCodesManage
           </div>
         </div>
       )}
+
+      {/* Filters */}
+      <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-slate-600">Status:</label>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
+            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          >
+            <option value="">All</option>
+            <option value="ACTIVE">Active</option>
+            <option value="USED">Used</option>
+            <option value="EXPIRED">Expired</option>
+            <option value="DISABLED">Disabled</option>
+          </select>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-slate-600">Amount:</label>
+          <input
+            type="number"
+            placeholder="Min"
+            value={minAmountFilter}
+            onChange={(e) => {
+              setMinAmountFilter(e.target.value);
+              setPage(1);
+            }}
+            className="w-24 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          />
+          <span className="text-slate-400">-</span>
+          <input
+            type="number"
+            placeholder="Max"
+            value={maxAmountFilter}
+            onChange={(e) => {
+              setMaxAmountFilter(e.target.value);
+              setPage(1);
+            }}
+            className="w-24 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          />
+        </div>
+        
+        {(statusFilter || minAmountFilter || maxAmountFilter) && (
+          <button
+            onClick={() => {
+              setStatusFilter("");
+              setMinAmountFilter("");
+              setMaxAmountFilter("");
+              setPage(1);
+            }}
+            className="text-sm text-slate-500 hover:text-slate-700 underline"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
 
       {/* List */}
       <div className="overflow-x-auto">

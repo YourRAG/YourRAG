@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { User, UserStats } from "../types";
-import { Github, Mail, Calendar, User as UserIcon, Shield, Activity as ActivityIcon, MapPin, FileText, Search, Database, Loader2, RefreshCw, Settings, Save, Key } from "lucide-react";
+import { Github, Mail, Calendar, User as UserIcon, Shield, Activity as ActivityIcon, MapPin, FileText, Search, Database, Loader2, RefreshCw, Settings, Save, Key, Download, Clock } from "lucide-react";
 import ApiKeyManager from "./ApiKeyManager";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -37,6 +37,12 @@ export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTa
   const [activeInstances, setActiveInstances] = useState<string[]>([]);
   const [coverImageLoaded, setCoverImageLoaded] = useState(false);
   
+  // Export Data State
+  const [canExport, setCanExport] = useState(true);
+  const [exportNextIn, setExportNextIn] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState("");
+  
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -69,6 +75,63 @@ export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTa
       setSettingsMessage("Failed to save settings.");
     } finally {
       setIsSavingSettings(false);
+    }
+  };
+
+  const checkExportStatus = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${API_URL}/user/export/status`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setCanExport(data.canExport);
+        setExportNextIn(data.nextExportIn);
+      }
+    } catch (err) {
+      console.error("Failed to check export status:", err);
+    }
+  }, [user]);
+
+  const handleExportData = async () => {
+    if (!user || !canExport) return;
+    setIsExporting(true);
+    setExportMessage("");
+
+    try {
+      const res = await fetch(`${API_URL}/user/export`, {
+        credentials: "include",
+      });
+
+      if (res.status === 429) {
+        const data = await res.json();
+        setExportMessage(data.detail || "Export limit reached");
+        await checkExportStatus();
+        return;
+      }
+
+      if (!res.ok) throw new Error("Failed to export data");
+
+      const data = await res.json();
+      
+      // Create and download file
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `yourrag-export-${user.username}-${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setExportMessage("Data exported successfully!");
+      await checkExportStatus();
+      setTimeout(() => setExportMessage(""), 3000);
+    } catch (err) {
+      console.error("Failed to export data:", err);
+      setExportMessage("Failed to export data.");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -135,6 +198,14 @@ export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTa
           const instancesData = await instancesRes.json();
           setActiveInstances(instancesData.instances || []);
         }
+      }
+
+      // Check export status
+      const exportRes = await fetch(`${API_URL}/user/export/status`, { credentials: "include" });
+      if (exportRes.ok) {
+        const exportData = await exportRes.json();
+        setCanExport(exportData.canExport);
+        setExportNextIn(exportData.nextExportIn);
       }
     } catch (err) {
       console.error("Failed to fetch profile data:", err);
@@ -254,6 +325,50 @@ export default function ProfileTab({ user, onUnauthorized, onUpdate }: ProfileTa
                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">API Access</h3>
                   </div>
                   <ApiKeyManager />
+                </div>
+
+                {/* Data Export Card */}
+                <div className="bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Download className="w-4 h-4 text-slate-500" />
+                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Data Export</h3>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <p className="text-xs text-slate-500">
+                      Export all your data including documents, activity records, transactions, and settings as a JSON file.
+                    </p>
+                    
+                    {!canExport && exportNextIn && (
+                      <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                        <Clock className="w-4 h-4" />
+                        <span>Next export available in {exportNextIn}</span>
+                      </div>
+                    )}
+                    
+                    <button
+                      onClick={handleExportData}
+                      disabled={isExporting || !canExport}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isExporting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      {isExporting ? "Exporting..." : "Export My Data"}
+                    </button>
+                    
+                    {exportMessage && (
+                      <p className={`text-xs text-center ${exportMessage.includes("Failed") || exportMessage.includes("limit") ? "text-red-500" : "text-green-500"}`}>
+                        {exportMessage}
+                      </p>
+                    )}
+                    
+                    <p className="text-[10px] text-slate-400 text-center">
+                      Limited to once per 24 hours
+                    </p>
+                  </div>
                 </div>
 
                 {/* Settings Card */}

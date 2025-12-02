@@ -160,16 +160,25 @@ class RedemptionService:
             raise e
 
     async def list_codes(
-        self, 
-        page: int = 1, 
-        page_size: int = 20, 
-        status: Optional[str] = None
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        status: Optional[str] = None,
+        min_amount: Optional[int] = None,
+        max_amount: Optional[int] = None
     ) -> Dict[str, Any]:
         """List redemption codes for admin."""
         skip = (page - 1) * page_size
         where_clause = {}
         if status:
             where_clause["status"] = status
+        
+        if min_amount is not None or max_amount is not None:
+            where_clause["amount"] = {}
+            if min_amount is not None:
+                where_clause["amount"]["gte"] = min_amount
+            if max_amount is not None:
+                where_clause["amount"]["lte"] = max_amount
             
         total = await self.prisma.redemptioncode.count(where=where_clause)
         codes = await self.prisma.redemptioncode.find_many(
