@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  KeyRound,
   ArrowLeft,
   Coins,
   Receipt,
@@ -160,6 +161,10 @@ export default function BillingPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 10;
+  
+  const [redemptionCode, setRedemptionCode] = useState("");
+  const [redeemLoading, setRedeemLoading] = useState(false);
+  const [redeemMessage, setRedeemMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -222,6 +227,37 @@ export default function BillingPage() {
       fetchTransactions();
     }
   }, [page, filterType]);
+
+  const handleRedeem = async () => {
+    if (!redemptionCode.trim()) return;
+    
+    setRedeemLoading(true);
+    setRedeemMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/redemption/use`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: redemptionCode }),
+        credentials: "include",
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        setRedeemMessage({ type: 'success', text: `Successfully redeemed ${data.amount} credits!` });
+        setRedemptionCode("");
+        // Refresh data after successful redemption
+        await fetchSummary();
+        await fetchTransactions();
+      } else {
+        setRedeemMessage({ type: 'error', text: data.detail || "Failed to redeem code" });
+      }
+    } catch (error) {
+      setRedeemMessage({ type: 'error', text: "An error occurred" });
+    } finally {
+      setRedeemLoading(false);
+    }
+  };
 
   const totalPages = Math.ceil(total / pageSize);
 
@@ -376,6 +412,54 @@ export default function BillingPage() {
                 <p className="text-xs text-slate-500 text-center">
                   Payment integration coming soon
                 </p>
+              </div>
+            </div>
+
+            {/* Redeem Code Card */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100">
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-slate-400" />
+                  Redeem Code
+                </h2>
+              </div>
+              
+              <div className="p-6">
+                 <div className="space-y-4">
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="Enter redemption code"
+                      value={redemptionCode}
+                      onChange={(e) => setRedemptionCode(e.target.value.toUpperCase())}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-center uppercase placeholder:normal-case"
+                    />
+                  </div>
+                  
+                  {redeemMessage && (
+                    <div className={`text-sm px-3 py-2 rounded-lg ${
+                      redeemMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                    } flex items-center gap-2`}>
+                      {redeemMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                      {redeemMessage.text}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleRedeem}
+                    disabled={!redemptionCode.trim() || redeemLoading}
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    {redeemLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Redeeming...
+                      </>
+                    ) : (
+                      "Redeem Code"
+                    )}
+                  </button>
+                 </div>
               </div>
             </div>
           </div>

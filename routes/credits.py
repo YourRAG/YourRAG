@@ -9,11 +9,18 @@ Provides endpoints for:
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
-from pydantic import BaseModel, Field
 from prisma import Prisma
 
 from auth import get_current_user
 from credits_service import CreditsService, TransactionType
+from schemas import (
+    CreditsSummaryResponse,
+    TransactionItem,
+    TransactionsResponse,
+    AdjustCreditsRequest,
+    GrantBonusRequest,
+    TransactionResponse,
+)
 
 
 router = APIRouter(prefix="/credits", tags=["credits"])
@@ -27,54 +34,6 @@ async def get_credits_service() -> CreditsService:
     if not prisma.is_connected():
         await prisma.connect()
     return CreditsService(prisma)
-
-
-# Request/Response Models
-class CreditsSummaryResponse(BaseModel):
-    balance: int
-    totalRecharged: int
-    totalConsumed: int
-    totalBonus: int
-
-
-class TransactionItem(BaseModel):
-    id: int
-    userId: int
-    type: str
-    status: str
-    amount: int
-    balanceBefore: int
-    balanceAfter: int
-    description: str
-    referenceId: Optional[str] = None
-    referenceType: Optional[str] = None
-    metadata: Optional[dict] = None
-    createdAt: str
-    updatedAt: str
-
-
-class TransactionsResponse(BaseModel):
-    transactions: list[TransactionItem]
-    total: int
-    limit: int
-    offset: int
-
-
-class AdjustCreditsRequest(BaseModel):
-    userId: int
-    amount: int = Field(..., description="Positive to add, negative to deduct")
-    description: str
-
-
-class GrantBonusRequest(BaseModel):
-    userId: int
-    amount: int = Field(..., gt=0, description="Must be positive")
-    description: str
-    reason: Optional[str] = None
-
-
-class TransactionResponse(BaseModel):
-    transaction: TransactionItem
 
 
 # User Endpoints

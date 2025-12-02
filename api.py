@@ -7,7 +7,15 @@ from contextlib import asynccontextmanager
 from auth import prisma
 from redis_service import RedisService
 from config_service import config_service
-from routes import auth_router, documents_router, admin_router, chat_router, codebase_router, credits_router
+from routes import (
+    auth_router,
+    documents_router,
+    admin_router,
+    chat_router,
+    codebase_router,
+    credits_router,
+    redemption_router
+)
 import config
 import uvicorn
 
@@ -59,6 +67,7 @@ app.include_router(admin_router)
 app.include_router(chat_router)
 app.include_router(codebase_router)
 app.include_router(credits_router)
+app.include_router(redemption_router)
 
 
 if __name__ == "__main__":

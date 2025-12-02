@@ -32,6 +32,8 @@ model User {
   documentGroups      DocumentGroup[]
   apiKeys             ApiKey[]
   transactions        Transaction[]
+  createdRedemptions  RedemptionCode[] @relation("CreatedRedemptions")
+  usedRedemptions     RedemptionCode[] @relation("UsedRedemptions")
 }
 
 model ApiKey {
@@ -156,4 +158,36 @@ model Transaction {
   @@index([type])
   @@index([status])
   @@index([createdAt])
+}
+
+// Redemption Code Status
+enum RedemptionStatus {
+  ACTIVE      // Can be used
+  USED        // Already used
+  EXPIRED     // Expired
+  DISABLED    // Disabled by admin
+}
+
+// Redemption Codes
+model RedemptionCode {
+  id          Int              @id @default(autoincrement())
+  code        String           @unique
+  amount      Int              // Credits amount
+  status      RedemptionStatus @default(ACTIVE)
+  
+  createdBy   Int              // Admin ID who created
+  createdByUser User           @relation("CreatedRedemptions", fields: [createdBy], references: [id])
+  
+  usedBy      Int?             // User ID who used
+  usedByUser  User?            @relation("UsedRedemptions", fields: [usedBy], references: [id])
+  
+  usedAt      DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([code])
+  @@index([status])
+  @@index([createdBy])
+  @@index([usedBy])
 }

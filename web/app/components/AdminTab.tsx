@@ -13,6 +13,7 @@ import {
 import { User } from "../types";
 import Modal, { ConfirmModal } from "./Modal";
 import UserListTable, { AdminUser } from "./UserListTable";
+import RedemptionCodesManager from "./RedemptionCodesManager";
 
 interface AdminStats {
   totalUsers: number;
@@ -283,6 +284,9 @@ export default function AdminTab() {
           </div>
         </div>
       </div>
+
+      {/* Redemption Codes Manager */}
+      <RedemptionCodesManager apiUrl={API_URL} />
 
       {/* System Settings */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">

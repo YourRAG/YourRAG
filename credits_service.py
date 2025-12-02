@@ -10,6 +10,7 @@ Handles all credit-related operations including:
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from prisma import Prisma
+from prisma import Json
 from enum import Enum
 
 
@@ -117,20 +118,24 @@ class CreditsService:
             raise ValueError("Insufficient credits")
 
         # Create transaction and update user balance in a transaction
-        transaction = await self.prisma.transaction.create(
-            data={
-                "userId": user_id,
-                "type": trans_type.value,
-                "status": TransactionStatus.COMPLETED.value,
-                "amount": amount,
-                "balanceBefore": balance_before,
-                "balanceAfter": balance_after,
-                "description": description,
-                "referenceId": reference_id,
-                "referenceType": reference_type,
-                "metadata": metadata,
-            }
-        )
+        # Build data dict using connect syntax for relation
+        create_data: Dict[str, Any] = {
+            "user": {"connect": {"id": user_id}},
+            "type": trans_type.value,
+            "status": TransactionStatus.COMPLETED.value,
+            "amount": amount,
+            "balanceBefore": balance_before,
+            "balanceAfter": balance_after,
+            "description": description,
+            "referenceId": reference_id,
+            "referenceType": reference_type,
+        }
+        
+        # Only set metadata if it has a value (Prisma Json field handling)
+        if metadata is not None:
+            create_data["metadata"] = Json(metadata)
+        
+        transaction = await self.prisma.transaction.create(data=create_data)
 
         # Update user balance
         await self.prisma.user.update(

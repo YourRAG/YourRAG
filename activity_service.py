@@ -3,6 +3,7 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from prisma import Prisma
+from prisma import Json
 from enum import Enum
 from config_service import config_service
 
@@ -47,16 +48,18 @@ class ActivityService:
             return
             
         try:
-            import json
-            await self.prisma.activity.create(
-                data={
-                    "userId": user_id,
-                    "type": activity_type.value,
-                    "title": title,
-                    "description": description,
-                    "metadata": json.dumps(metadata) if metadata else "{}"
-                }
-            )
+            create_data: Dict[str, Any] = {
+                "user": {"connect": {"id": user_id}},
+                "type": activity_type.value,
+                "title": title,
+                "description": description,
+            }
+            
+            # Only set metadata if it has a value (Prisma Json field handling)
+            if metadata is not None:
+                create_data["metadata"] = Json(metadata)
+            
+            await self.prisma.activity.create(data=create_data)
         except Exception as e:
             # 记录活动失败不应影响主要业务逻辑
             print(f"Failed to record activity: {e}")

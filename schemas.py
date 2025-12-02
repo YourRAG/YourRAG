@@ -233,3 +233,90 @@ class OpenAIRequest(BaseModel):
 class RAGResponse(BaseModel):
     answer: str
     sources: List[SearchResult]
+# =====================
+# Transaction Schemas
+# =====================
+
+
+class TransactionItem(BaseModel):
+    id: int
+    userId: int
+    type: str
+    status: str
+    amount: int
+    balanceBefore: int
+    balanceAfter: int
+    description: str
+    referenceId: Optional[str] = None
+    referenceType: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    createdAt: datetime
+    updatedAt: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class TransactionResponse(BaseModel):
+    transaction: TransactionItem
+
+
+class TransactionsResponse(BaseModel):
+    transactions: List[TransactionItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class CreditsSummaryResponse(BaseModel):
+    balance: int
+    totalRecharged: int
+    totalConsumed: int
+    totalBonus: int
+
+
+class AdjustCreditsRequest(BaseModel):
+    userId: int
+    amount: int
+    description: str
+
+
+class GrantBonusRequest(BaseModel):
+    userId: int
+    amount: int
+    description: str
+    reason: Optional[str] = None
+
+# =====================
+# Redemption Schemas
+# =====================
+
+
+class RedemptionGenerateRequest(BaseModel):
+    amount: int
+    count: int = 1
+    expiresAt: Optional[datetime] = None
+    prefix: Optional[str] = ""
+
+
+class RedemptionUseRequest(BaseModel):
+    code: str
+
+
+class RedemptionCodeResponse(BaseModel):
+    id: int
+    code: str
+    amount: int
+    status: str
+    createdAt: datetime
+    expiresAt: Optional[datetime]
+    usedAt: Optional[datetime]
+    createdBy: int
+    usedBy: Optional[int]
+
+
+class RedemptionListResponse(BaseModel):
+    items: List[RedemptionCodeResponse]
+    total: int
+    page: int
+    pageSize: int
