@@ -2,7 +2,16 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, User as UserIcon, Github, Play, Code } from "lucide-react";
+import {
+  LogOut,
+  User as UserIcon,
+  Github,
+  Play,
+  Code,
+  Coins,
+  Receipt,
+  Sparkles,
+} from "lucide-react";
 import { User } from "../types";
 
 interface UserMenuProps {
@@ -13,6 +22,13 @@ interface UserMenuProps {
   onProfileClick: () => void;
   onDemoClick: () => void;
   providers: string[];
+}
+
+function formatCredits(credits: number): string {
+  if (credits >= 10000) {
+    return (credits / 1000).toFixed(1) + "k";
+  }
+  return credits.toLocaleString();
 }
 
 export default function UserMenu({
@@ -91,57 +107,100 @@ export default function UserMenu({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50">
-          <div className="px-4 py-2 border-b border-slate-200">
-            <p className="text-sm font-medium text-slate-900">{user.username}</p>
+        <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-50 overflow-hidden">
+          {/* User Info Header */}
+          <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+            <p className="text-sm font-semibold text-slate-900">{user.username}</p>
             {user.email && (
               <p className="text-xs text-slate-500 truncate">{user.email}</p>
             )}
           </div>
+
+          {/* Credits Display */}
+          <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-amber-50 to-orange-50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-sm">
+                  <Coins className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs text-amber-700 font-medium">Credits</p>
+                  <p className="text-lg font-bold text-amber-900">{formatCredits(user.credits)}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  router.push("/billing");
+                  setIsOpen(false);
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-full transition-colors"
+              >
+                <Sparkles className="w-3 h-3" />
+                Recharge
+              </button>
+            </div>
+          </div>
           
-          <button
-            onClick={() => {
-              router.push("/codebase");
-              setIsOpen(false);
-            }}
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Code className="w-4 h-4" />
-            Code Base
-          </button>
+          {/* Menu Items */}
+          <div className="py-1">
+            <button
+              onClick={() => {
+                router.push("/billing");
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Receipt className="w-4 h-4 text-slate-400" />
+              <span>Billing</span>
+            </button>
 
-          <button
-            onClick={() => {
-              onDemoClick();
-              setIsOpen(false);
-            }}
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Play className="w-4 h-4" />
-            Demo
-          </button>
+            <button
+              onClick={() => {
+                router.push("/codebase");
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Code className="w-4 h-4 text-slate-400" />
+              <span>Code Base</span>
+            </button>
 
-          <button
-            onClick={() => {
-              onProfileClick();
-              setIsOpen(false);
-            }}
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <UserIcon className="w-4 h-4" />
-            Your Profile
-          </button>
+            <button
+              onClick={() => {
+                onDemoClick();
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Play className="w-4 h-4 text-slate-400" />
+              <span>Demo</span>
+            </button>
 
-          <button
-            onClick={async () => {
-              await onLogout();
-              setIsOpen(false);
-            }}
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors border-t border-slate-100"
-          >
-            <LogOut className="w-4 h-4" />
-            Sign out
-          </button>
+            <button
+              onClick={() => {
+                onProfileClick();
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <UserIcon className="w-4 h-4 text-slate-400" />
+              <span>Your Profile</span>
+            </button>
+          </div>
+
+          {/* Logout */}
+          <div className="border-t border-slate-100">
+            <button
+              onClick={async () => {
+                await onLogout();
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign out</span>
+            </button>
+          </div>
         </div>
       )}
     </div>

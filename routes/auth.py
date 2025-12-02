@@ -243,6 +243,7 @@ async def get_me(current_user=Depends(get_current_user)):
         role=current_user.role,
         topK=current_user.topK,
         similarityThreshold=current_user.similarityThreshold,
+        credits=current_user.credits,
     )
 
 

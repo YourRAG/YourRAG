@@ -12,24 +12,26 @@ generator client {
 }
 
 model User {
-  id                  Int        @id @default(autoincrement())
-  githubId            String?    @unique
-  giteeId             String?    @unique
+  id                  Int           @id @default(autoincrement())
+  githubId            String?       @unique
+  giteeId             String?       @unique
   username            String
   email               String?
   avatarUrl           String?
-  role                Role       @default(USER)
-  topK                Int        @default(10)
-  similarityThreshold Float      @default(0.5)
-  banned              Boolean    @default(false)
+  role                Role          @default(USER)
+  topK                Int           @default(10)
+  similarityThreshold Float         @default(0.5)
+  credits             Int           @default(0)
+  banned              Boolean       @default(false)
   bannedAt            DateTime?
   banReason           String?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
   activities          Activity[]
   documents           Document[]
   documentGroups      DocumentGroup[]
   apiKeys             ApiKey[]
+  transactions        Transaction[]
 }
 
 model ApiKey {
@@ -114,4 +116,44 @@ model SystemConfig {
   value     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Transaction Types
+enum TransactionType {
+  RECHARGE      // Recharge/Top-up
+  CONSUMPTION   // Usage/Consumption
+  REFUND        // Refund
+  BONUS         // Bonus/Gift
+  ADJUSTMENT    // Admin adjustment
+}
+
+// Transaction Status
+enum TransactionStatus {
+  PENDING     // Waiting for processing
+  COMPLETED   // Successfully completed
+  FAILED      // Failed
+  CANCELLED   // Cancelled
+}
+
+// Transaction/Billing Record
+model Transaction {
+  id            Int               @id @default(autoincrement())
+  userId        Int
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          TransactionType
+  status        TransactionStatus @default(COMPLETED)
+  amount        Int               // Positive for credit, negative for debit
+  balanceBefore Int               // Balance before transaction
+  balanceAfter  Int               // Balance after transaction
+  description   String
+  referenceId   String?           // Related order/recharge ID
+  referenceType String?           // ORDER, RECHARGE, USAGE, etc.
+  metadata      Json?             // Additional information
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
 }

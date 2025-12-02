@@ -12,6 +12,44 @@ export interface User {
   role: Role;
   topK: number;
   similarityThreshold: number;
+  credits: number;
+}
+
+// Credits & Billing Types
+export type TransactionType =
+  | "RECHARGE"
+  | "CONSUMPTION"
+  | "REFUND"
+  | "BONUS"
+  | "ADJUSTMENT";
+
+export type TransactionStatus =
+  | "PENDING"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED";
+
+export interface Transaction {
+  id: number;
+  userId: number;
+  type: TransactionType;
+  status: TransactionStatus;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  description: string;
+  referenceId: string | null;
+  referenceType: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreditsSummary {
+  balance: number;
+  totalRecharged: number;
+  totalConsumed: number;
+  totalBonus: number;
 }
 
 export interface AuthState {

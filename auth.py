@@ -28,6 +28,7 @@ class User(BaseModel):
     role: str = "USER"
     topK: int = 5
     similarityThreshold: float = 0.8
+    credits: int = 0
 
 
 def get_private_key() -> str:
