@@ -6,11 +6,13 @@ MCP (Model Context Protocol) 客户端模块
 
 import os
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import json
 from typing import Optional, Dict, Any, List
 
 # MCP Client version
-MCP_CLIENT_VERSION = "1.0.0"
+MCP_CLIENT_VERSION = "1.0.1"
 
 
 class MCPClient:
@@ -20,7 +22,7 @@ class MCPClient:
         self,
         server_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        timeout: int = 60,
+        timeout: int = 120,
     ):
         """
         初始化 MCP 客户端
@@ -28,7 +30,7 @@ class MCPClient:
         Args:
             server_url: MCP 服务器 URL（默认使用 Exa MCP 服务器）
             api_key: API 密钥（某些服务器需要）
-            timeout: 请求超时时间（秒，默认 60）
+            timeout: 请求超时时间（秒，默认 120）
         """
         self.server_url = server_url or os.getenv(
             "MCP_SERVER_URL",
@@ -47,6 +49,20 @@ class MCPClient:
 
         if self.api_key:
             self.headers["Authorization"] = f"Bearer {self.api_key}"
+
+        # 初始化 Session 并配置重试策略
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+        
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["POST"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
 
     def _get_next_request_id(self) -> int:
         """
@@ -84,9 +100,8 @@ class MCPClient:
             payload["params"] = params
 
         try:
-            response = requests.post(
+            response = self.session.post(
                 self.server_url,
-                headers=self.headers,
                 json=payload,
                 timeout=self.timeout,
             )
