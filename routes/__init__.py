@@ -10,6 +10,7 @@ from .codebase import router as codebase_router
 from .credits import router as credits_router
 from .redemption import router as redemption_router
 from .export import router as export_router
+from .source_search import router as source_search_router
 
 __all__ = [
     "auth_router",
@@ -20,4 +21,5 @@ __all__ = [
     "credits_router",
     "redemption_router",
     "export_router",
+    "source_search_router",
 ]

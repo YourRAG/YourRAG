@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon, FileUp, PanelLeftClose, PanelLeft, Sparkles, Globe, X } from "lucide-react";
+import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon, FileUp, PanelLeftClose, PanelLeft, Sparkles, Globe, X, Search } from "lucide-react";
 import DocumentPreviewPanel from "./DocumentPreviewPanel";
+import SourceSearchModal from "./SourceSearchModal";
 
 // Portal component for rendering modals outside of component hierarchy
 function Portal({ children }: { children: React.ReactNode }) {
@@ -57,6 +58,9 @@ export default function AddDocumentTab() {
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [isImportingUrl, setIsImportingUrl] = useState(false);
+
+  // Source search modal state
+  const [showSourceSearchModal, setShowSourceSearchModal] = useState(false);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -223,6 +227,22 @@ export default function AddDocumentTab() {
       return prev + separator;
     });
   };
+
+  // Handle import from source search modal
+  const handleSourceSearchImport = useCallback((contents: Array<{ content: string; title?: string; url: string }>) => {
+    setContent((prev) => {
+      const separator = "\n\n--------\n\n";
+      const newContent = contents.map(item => {
+        // Add source URL as metadata header
+        const header = item.title ? `# ${item.title}\n\n> Source: ${item.url}\n\n` : `> Source: ${item.url}\n\n`;
+        return header + item.content;
+      }).join(separator);
+      
+      return prev.trim() ? prev + separator + newContent : newContent;
+    });
+    setMessage(`Imported ${contents.length} document${contents.length > 1 ? 's' : ''} from source search`);
+    setTimeout(() => setMessage(""), 3000);
+  }, []);
 
   const handleUrlImport = async () => {
     if (!urlInput.trim() || isImportingUrl) return;
@@ -636,6 +656,16 @@ export default function AddDocumentTab() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setShowSourceSearchModal(true)}
+                        className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-700 font-medium px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                        title="Search for sources online and import"
+                      >
+                        <Search className="w-3 h-3" />
+                        <span className="hidden xs:inline">Sources</span>
+                        <span className="xs:hidden">Src</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={insertSeparator}
                         className="text-xs flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors"
                         title="Insert Separator"
@@ -848,6 +878,13 @@ export default function AddDocumentTab() {
             </div>
           </Portal>
         )}
+  
+        {/* Source Search Modal */}
+        <SourceSearchModal
+          isOpen={showSourceSearchModal}
+          onClose={() => setShowSourceSearchModal(false)}
+          onImport={handleSourceSearchImport}
+        />
       </div>
     );
   }
@@ -1052,6 +1089,16 @@ export default function AddDocumentTab() {
                     {isImportingUrl ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
                     <span className="hidden sm:inline">Import URL</span>
                     <span className="sm:hidden">URL</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSourceSearchModal(true)}
+                    className="text-xs flex items-center gap-1 sm:gap-1.5 text-indigo-600 hover:text-indigo-700 font-medium px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                    title="Search for sources online and import"
+                  >
+                    <Search className="w-3 h-3" />
+                    <span className="hidden sm:inline">Source Search</span>
+                    <span className="sm:hidden">Src</span>
                   </button>
                   <button
                     type="button"
@@ -1300,6 +1347,13 @@ export default function AddDocumentTab() {
           </div>
         </Portal>
       )}
+
+      {/* Source Search Modal */}
+      <SourceSearchModal
+        isOpen={showSourceSearchModal}
+        onClose={() => setShowSourceSearchModal(false)}
+        onImport={handleSourceSearchImport}
+      />
     </div>
   );
 }

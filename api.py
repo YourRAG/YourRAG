@@ -15,7 +15,8 @@ from routes import (
     codebase_router,
     credits_router,
     redemption_router,
-    export_router
+    export_router,
+    source_search_router,
 )
 import config
 import uvicorn
@@ -70,6 +71,7 @@ app.include_router(codebase_router)
 app.include_router(credits_router)
 app.include_router(redemption_router)
 app.include_router(export_router)
+app.include_router(source_search_router)
 
 
 if __name__ == "__main__":

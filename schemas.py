@@ -472,3 +472,65 @@ class UrlImportResponse(BaseModel):
     source_url: str
     title: Optional[str] = None
     content_length: int
+
+
+# =====================
+# Source Search Schemas
+# =====================
+
+
+class SourceSearchRequest(BaseModel):
+    """Request for starting a source search task."""
+    query: str
+    max_rounds: int = 3  # Maximum search iterations
+    results_per_round: int = 5  # Number of results per search round
+
+
+class SourceSearchResult(BaseModel):
+    """A single search result with URL and metadata."""
+    url: str
+    title: str
+    snippet: str
+    relevance_score: Optional[float] = None  # Optional relevance score from LLM
+
+
+class SourceSearchStatus(BaseModel):
+    """Status of a source search task."""
+    task_id: str
+    status: str  # "pending" | "searching" | "completed" | "failed"
+    current_round: int
+    total_rounds: int
+    message: str
+    results: List[SourceSearchResult] = []
+    error: Optional[str] = None
+
+
+class SourceSearchTaskResponse(BaseModel):
+    """Response when starting a source search task."""
+    task_id: str
+    message: str
+    status: SourceSearchStatus
+
+
+class BatchUrlImportRequest(BaseModel):
+    """Request for batch importing multiple URLs."""
+    urls: List[str]
+    max_characters: int = 15000
+
+
+class BatchUrlImportResult(BaseModel):
+    """Result of importing a single URL in batch."""
+    url: str
+    success: bool
+    content: Optional[str] = None
+    title: Optional[str] = None
+    content_length: Optional[int] = None
+    error: Optional[str] = None
+
+
+class BatchUrlImportResponse(BaseModel):
+    """Response containing batch import results."""
+    total: int
+    successful: int
+    failed: int
+    results: List[BatchUrlImportResult]
