@@ -25,6 +25,9 @@ from schemas import (
     FactCheckRequest,
     FactCheckResponse,
     FactCheckSource,
+    KnowledgeCheckRequest,
+    KnowledgeCheckResponse,
+    KnowledgeCheckSource,
     UrlImportRequest,
     UrlImportResponse,
 )
@@ -616,6 +619,190 @@ Search results from web:
     except Exception as e:
         print(f"Fact check error: {e}")
         raise HTTPException(status_code=500, detail=f"Fact check failed: {str(e)}")
+
+
+@router.post("/documents/knowledge-check", response_model=KnowledgeCheckResponse)
+async def knowledge_check_document(
+    request: KnowledgeCheckRequest, current_user=Depends(get_chat_user)
+):
+    """
+    Knowledge-check a document by searching for related documents in user's knowledge base
+    and using AI to analyze consistency with existing knowledge.
+
+    Uses vector similarity search to find relevant documents from user's collection
+    and LLM to analyze the content's consistency with found documents.
+    """
+    try:
+        content = request.content.strip()
+        if not content:
+            raise HTTPException(status_code=400, detail="Content cannot be empty")
+
+        # Get user's similarity threshold
+        user_similarity = (
+            current_user.similarityThreshold if current_user.similarityThreshold is not None else 0.8
+        )
+        distance_threshold = 1.0 - user_similarity
+
+        # Search for related documents in user's knowledge base
+        results, total = await store.search(
+            user_id=current_user.id,
+            query=content[:1000],  # Use first 1000 chars as search query
+            threshold=distance_threshold,
+            limit=5,
+            offset=0,
+            group_id=request.group_id,
+        )
+
+        # Build sources from search results
+        all_sources: List[KnowledgeCheckSource] = []
+        source_texts = []
+
+        for result in results:
+            doc_content = result.get("content", "")
+            doc_id = result.get("id", 0)
+            distance = result.get("distance", 0)
+            similarity = 1.0 - distance  # Convert distance to similarity
+
+            # Get title from metadata or use first line
+            metadata = result.get("metadata", {})
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = {}
+
+            title = metadata.get("title") or metadata.get("filename") or doc_content[:50].split("\n")[0]
+            if len(title) > 50:
+                title = title[:47] + "..."
+
+            snippet = doc_content[:300] + "..." if len(doc_content) > 300 else doc_content
+
+            all_sources.append(
+                KnowledgeCheckSource(
+                    doc_id=doc_id,
+                    title=title,
+                    snippet=snippet,
+                    similarity=round(similarity, 3),
+                )
+            )
+            source_texts.append(f"Document (similarity: {similarity:.1%}):\n{doc_content[:800]}")
+
+        # If no related documents found
+        if not source_texts:
+            return KnowledgeCheckResponse(
+                consistency_score=50,
+                verdict="no_reference",
+                analysis="No related documents found in your knowledge base. Unable to verify consistency with existing knowledge.",
+                sources=[],
+                claims_checked=0,
+            )
+
+        # Analyze consistency using LLM
+        analysis_prompt = """You are a knowledge consistency expert. Analyze the following content against the user's existing knowledge base documents and determine its consistency.
+
+IMPORTANT: Respond ONLY with a valid JSON object in this exact format:
+{{"consistency_score": <number 0-100>, "verdict": "<consistent|mostly_consistent|mixed|no_reference|inconsistent>", "analysis": "<2-3 sentence explanation in Chinese>"}}
+
+Scoring guidelines:
+- 90-100 (consistent): Content fully aligns with existing knowledge base documents
+- 70-89 (mostly_consistent): Content mostly aligns with minor differences
+- 40-69 (mixed): Some parts align, others differ or contradict
+- 20-39 (no_reference): Content discusses topics not covered in knowledge base
+- 0-19 (inconsistent): Content contradicts existing knowledge base documents
+
+Content to verify:
+---
+{content}
+---
+
+Related documents from knowledge base:
+---
+{sources}
+---"""
+
+        try:
+            llm_service = LLMService()
+            analysis_response = llm_service.chat_completion(
+                query=analysis_prompt.format(
+                    content=content[:2000],
+                    sources="\n\n".join(source_texts[:3]),
+                ),
+                contexts=[],
+                system_prompt="You are a knowledge consistency analyzer. Respond only with valid JSON.",
+                temperature=0.3,
+                max_tokens=1000,
+            )
+        except Exception as analysis_error:
+            print(f"LLM analysis API failed: {analysis_error}")
+            import traceback
+            traceback.print_exc()
+            return KnowledgeCheckResponse(
+                consistency_score=50,
+                verdict="no_reference",
+                analysis="AI analysis unavailable. Please review the related documents manually.",
+                sources=all_sources,
+                claims_checked=len(source_texts),
+            )
+
+        # Parse the analysis response
+        try:
+            analysis_text = analysis_response.strip()
+
+            # Remove markdown code blocks if present
+            if analysis_text.startswith("```"):
+                lines = analysis_text.split("\n")
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].strip().startswith("```"):
+                    lines = lines[:-1]
+                analysis_text = "\n".join(lines)
+
+            # Try to extract JSON object from the response
+            import re
+            json_match = re.search(r'\{[\s\S]*?"consistency_score"[\s\S]*?"verdict"[\s\S]*?"analysis"[\s\S]*?\}', analysis_text)
+            if json_match:
+                analysis_text = json_match.group()
+            else:
+                json_match = re.search(r'\{[^{}]+\}', analysis_text)
+                if json_match:
+                    analysis_text = json_match.group()
+
+            analysis_data = json.loads(analysis_text)
+
+            consistency_score = int(analysis_data.get("consistency_score", 50))
+            consistency_score = max(0, min(100, consistency_score))
+
+            verdict = analysis_data.get("verdict", "no_reference")
+            if verdict not in [
+                "consistent",
+                "mostly_consistent",
+                "mixed",
+                "no_reference",
+                "inconsistent",
+            ]:
+                verdict = "no_reference"
+
+            analysis = analysis_data.get("analysis", "Analysis could not be generated.")
+
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            print(f"Failed to parse analysis response: {e}")
+            consistency_score = 50
+            verdict = "no_reference"
+            analysis = "Unable to complete consistency analysis. Please try again."
+
+        return KnowledgeCheckResponse(
+            consistency_score=consistency_score,
+            verdict=verdict,
+            analysis=analysis,
+            sources=all_sources,
+            claims_checked=len(source_texts),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Knowledge check error: {e}")
+        raise HTTPException(status_code=500, detail=f"Knowledge check failed: {str(e)}")
 
 
 @router.post("/documents/parse")

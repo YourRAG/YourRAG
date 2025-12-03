@@ -2,12 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Shield, ShieldCheck, ShieldAlert, ShieldQuestion, ExternalLink, AlertTriangle, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
+import { X, Shield, ShieldCheck, ShieldAlert, ShieldQuestion, ExternalLink, AlertTriangle, CheckCircle2, XCircle, HelpCircle, BookMarked, BookOpen, BookX, FileText } from "lucide-react";
 
 interface FactCheckSource {
   title: string;
   url: string;
   snippet: string;
+}
+
+interface KnowledgeCheckSource {
+  doc_id: number;
+  title: string;
+  snippet: string;
+  similarity: number;
 }
 
 interface FactCheckResult {
@@ -18,15 +25,26 @@ interface FactCheckResult {
   claims_checked: number;
 }
 
+interface KnowledgeCheckResult {
+  consistency_score: number;
+  verdict: "consistent" | "mostly_consistent" | "mixed" | "no_reference" | "inconsistent";
+  analysis: string;
+  sources: KnowledgeCheckSource[];
+  claims_checked: number;
+}
+
+type CheckMode = "fact" | "knowledge";
+
 interface FactCheckModalProps {
   isOpen: boolean;
   onClose: () => void;
-  result: FactCheckResult | null;
+  result: FactCheckResult | KnowledgeCheckResult | null;
   isLoading?: boolean;
   onRetry?: () => void;
+  mode?: CheckMode;
 }
 
-const verdictConfig = {
+const factCheckVerdictConfig = {
   verified: {
     label: "Verified",
     labelCn: "已验证",
@@ -74,6 +92,62 @@ const verdictConfig = {
   },
 };
 
+const knowledgeCheckVerdictConfig = {
+  consistent: {
+    label: "Consistent",
+    labelCn: "一致",
+    color: "text-green-700",
+    bgColor: "bg-green-50",
+    borderColor: "border-green-200",
+    icon: BookMarked,
+    iconColor: "text-green-500",
+  },
+  mostly_consistent: {
+    label: "Mostly Consistent",
+    labelCn: "大部分一致",
+    color: "text-emerald-700",
+    bgColor: "bg-emerald-50",
+    borderColor: "border-emerald-200",
+    icon: BookOpen,
+    iconColor: "text-emerald-500",
+  },
+  mixed: {
+    label: "Mixed",
+    labelCn: "部分一致",
+    color: "text-amber-700",
+    bgColor: "bg-amber-50",
+    borderColor: "border-amber-200",
+    icon: AlertTriangle,
+    iconColor: "text-amber-500",
+  },
+  no_reference: {
+    label: "No Reference",
+    labelCn: "无参考",
+    color: "text-slate-700",
+    bgColor: "bg-slate-50",
+    borderColor: "border-slate-200",
+    icon: HelpCircle,
+    iconColor: "text-slate-500",
+  },
+  inconsistent: {
+    label: "Inconsistent",
+    labelCn: "不一致",
+    color: "text-red-700",
+    bgColor: "bg-red-50",
+    borderColor: "border-red-200",
+    icon: BookX,
+    iconColor: "text-red-500",
+  },
+};
+
+// Combined config getter
+function getVerdictConfig(verdict: string, mode: CheckMode) {
+  if (mode === "knowledge") {
+    return knowledgeCheckVerdictConfig[verdict as keyof typeof knowledgeCheckVerdictConfig] || knowledgeCheckVerdictConfig.no_reference;
+  }
+  return factCheckVerdictConfig[verdict as keyof typeof factCheckVerdictConfig] || factCheckVerdictConfig.unverified;
+}
+
 function getScoreColor(score: number): string {
   if (score >= 80) return "text-green-600";
   if (score >= 60) return "text-emerald-600";
@@ -108,6 +182,7 @@ export default function FactCheckModal({
   result,
   isLoading = false,
   onRetry,
+  mode = "fact",
 }: FactCheckModalProps) {
   const [mounted, setMounted] = useState(false);
   const isChinese = useIsChinese();
@@ -129,8 +204,10 @@ export default function FactCheckModal({
 
   if (!mounted || !isOpen) return null;
 
-  const verdictInfo = result ? verdictConfig[result.verdict] : null;
-  const VerdictIcon = verdictInfo?.icon || ShieldQuestion;
+  const verdictInfo = result ? getVerdictConfig(result.verdict, mode) : null;
+  const VerdictIcon = verdictInfo?.icon || (mode === "knowledge" ? BookOpen : ShieldQuestion);
+  const score = result ? (mode === "knowledge" ? (result as KnowledgeCheckResult).consistency_score : (result as FactCheckResult).credibility_score) : 0;
+  const isKnowledgeMode = mode === "knowledge";
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
@@ -142,8 +219,14 @@ export default function FactCheckModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-blue-600" />
-            <h3 className="text-lg font-semibold text-slate-900">Fact Check Result</h3>
+            {isKnowledgeMode ? (
+              <BookMarked className="w-5 h-5 text-purple-600" />
+            ) : (
+              <Shield className="w-5 h-5 text-blue-600" />
+            )}
+            <h3 className="text-lg font-semibold text-slate-900">
+              {isKnowledgeMode ? "Knowledge Check Result" : "Fact Check Result"}
+            </h3>
           </div>
           <button
             onClick={onClose}
@@ -185,17 +268,19 @@ export default function FactCheckModal({
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className={`text-3xl font-bold ${getScoreColor(result.credibility_score)}`}>
-                      {result.credibility_score}
+                    <div className={`text-3xl font-bold ${getScoreColor(score)}`}>
+                      {score}
                     </div>
-                    <div className="text-xs text-slate-500">Credibility Score</div>
+                    <div className="text-xs text-slate-500">
+                      {isKnowledgeMode ? "Consistency Score" : "Credibility Score"}
+                    </div>
                   </div>
                 </div>
                 {/* Score Bar */}
                 <div className="mt-3 h-2 bg-white/50 rounded-full overflow-hidden">
                   <div
-                    className={`h-full ${getScoreBgColor(result.credibility_score)} transition-all duration-500`}
-                    style={{ width: `${result.credibility_score}%` }}
+                    className={`h-full ${getScoreBgColor(score)} transition-all duration-500`}
+                    style={{ width: `${score}%` }}
                   />
                 </div>
               </div>
@@ -223,28 +308,44 @@ export default function FactCheckModal({
               {/* Sources */}
               {result.sources.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-700 mb-2">Sources</h4>
+                  <h4 className="text-sm font-semibold text-slate-700 mb-2">
+                    {isKnowledgeMode ? "Related Documents" : "Sources"}
+                  </h4>
                   <div className="space-y-2">
                     {result.sources.map((source, index) => (
                       <div
                         key={index}
-                        className="bg-white border border-slate-200 rounded-lg p-3 hover:border-blue-300 transition-colors"
+                        className={`bg-white border border-slate-200 rounded-lg p-3 transition-colors ${
+                          isKnowledgeMode ? "hover:border-purple-300" : "hover:border-blue-300"
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <h5 className="text-sm font-medium text-slate-800 line-clamp-1">
-                            {source.title || `Source ${index + 1}`}
-                          </h5>
-                          {source.url && (
-                            <a
-                              href={source.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex-shrink-0 p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
-                              title="Open source"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {isKnowledgeMode && (
+                              <FileText className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                            )}
+                            <h5 className="text-sm font-medium text-slate-800 line-clamp-1">
+                              {source.title || `${isKnowledgeMode ? "Document" : "Source"} ${index + 1}`}
+                            </h5>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {isKnowledgeMode && "similarity" in source && (
+                              <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
+                                {Math.round((source as KnowledgeCheckSource).similarity * 100)}%
+                              </span>
+                            )}
+                            {!isKnowledgeMode && "url" in source && (source as FactCheckSource).url && (
+                              <a
+                                href={(source as FactCheckSource).url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-shrink-0 p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                                title="Open source"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            )}
+                          </div>
                         </div>
                         <p className="mt-1 text-xs text-slate-500 line-clamp-2">
                           {source.snippet}
@@ -260,23 +361,36 @@ export default function FactCheckModal({
                 <div className="flex justify-center pt-2">
                   <button
                     onClick={onRetry}
-                    className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-2"
+                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${
+                      isKnowledgeMode
+                        ? "text-purple-600 bg-purple-50 hover:bg-purple-100"
+                        : "text-blue-600 bg-blue-50 hover:bg-blue-100"
+                    }`}
                   >
-                    <Shield className="w-4 h-4" />
-                    Retry Fact Check
+                    {isKnowledgeMode ? (
+                      <BookMarked className="w-4 h-4" />
+                    ) : (
+                      <Shield className="w-4 h-4" />
+                    )}
+                    {isKnowledgeMode ? "Retry Knowledge Check" : "Retry Fact Check"}
                   </button>
                 </div>
               )}
 
               {/* Disclaimer */}
               <div className="text-xs text-slate-400 text-center pt-2 border-t border-slate-100">
-                Results are based on AI analysis and may not be 100% accurate.
-                Always verify important information from multiple sources.
+                {isKnowledgeMode
+                  ? "Results are based on AI analysis comparing with your knowledge base documents."
+                  : "Results are based on AI analysis and may not be 100% accurate. Always verify important information from multiple sources."}
               </div>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-12">
-              <ShieldAlert className="w-16 h-16 text-slate-300" />
+              {isKnowledgeMode ? (
+                <BookX className="w-16 h-16 text-slate-300" />
+              ) : (
+                <ShieldAlert className="w-16 h-16 text-slate-300" />
+              )}
               <p className="mt-4 text-slate-600">No results available</p>
             </div>
           )}
@@ -293,18 +407,24 @@ export function CredibilityBadge({
   verdict,
   onClick,
   size = "sm",
+  mode = "fact",
 }: {
   score: number;
   verdict: string;
   onClick?: (e: React.MouseEvent) => void;
   size?: "sm" | "md";
+  mode?: CheckMode;
 }) {
-  const verdictInfo = verdictConfig[verdict as keyof typeof verdictConfig] || verdictConfig.unverified;
+  const verdictInfo = getVerdictConfig(verdict, mode);
   const VerdictIcon = verdictInfo.icon;
 
-  const sizeClasses = size === "sm" 
+  const sizeClasses = size === "sm"
     ? "px-1.5 py-0.5 text-xs gap-1"
     : "px-2 py-1 text-sm gap-1.5";
+
+  const title = mode === "knowledge"
+    ? `Consistency: ${score}% - Click for details`
+    : `Credibility: ${score}% - Click for details`;
 
   return (
     <button
@@ -313,10 +433,13 @@ export function CredibilityBadge({
         onClick?.(e);
       }}
       className={`inline-flex items-center ${sizeClasses} rounded-md ${verdictInfo.bgColor} ${verdictInfo.color} ${verdictInfo.borderColor} border font-medium hover:opacity-80 transition-opacity`}
-      title={`Credibility: ${score}% - Click for details`}
+      title={title}
     >
       <VerdictIcon className={`w-3 h-3 ${verdictInfo.iconColor}`} />
       <span>{score}%</span>
     </button>
   );
 }
+
+// Export types for use in other components
+export type { FactCheckResult, KnowledgeCheckResult, KnowledgeCheckSource, CheckMode };

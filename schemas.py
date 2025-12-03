@@ -428,6 +428,34 @@ class FactCheckResponse(BaseModel):
 
 
 # =====================
+# Knowledge Check Schemas
+# =====================
+
+
+class KnowledgeCheckSource(BaseModel):
+    """A source document used for knowledge checking."""
+    doc_id: int
+    title: str
+    snippet: str
+    similarity: float  # Similarity score (0-1)
+
+
+class KnowledgeCheckRequest(BaseModel):
+    """Request for knowledge checking a document against existing knowledge base."""
+    content: str
+    group_id: Optional[int] = None  # Optional: limit search to specific group
+
+
+class KnowledgeCheckResponse(BaseModel):
+    """Response containing knowledge check results."""
+    consistency_score: int  # 0-100 percentage
+    verdict: str  # "consistent" | "mostly_consistent" | "mixed" | "no_reference" | "inconsistent"
+    analysis: str  # Detailed analysis explanation
+    sources: List[KnowledgeCheckSource]  # Source documents from knowledge base
+    claims_checked: int  # Number of claims checked
+
+
+# =====================
 # URL Import Schemas
 # =====================
 

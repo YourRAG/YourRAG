@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FileText, ChevronRight, Hash, Scissors, Loader2, Sparkles, Shield } from "lucide-react";
+import { FileText, ChevronRight, Hash, Scissors, Loader2, Sparkles, Shield, BookMarked } from "lucide-react";
 import Markdown from "./Markdown";
-import FactCheckModal, { CredibilityBadge } from "./FactCheckModal";
+import FactCheckModal, { CredibilityBadge, FactCheckResult, KnowledgeCheckResult, CheckMode } from "./FactCheckModal";
 
 interface DocumentPreviewPanelProps {
   content: string;
@@ -22,18 +22,17 @@ interface ParsedDocument {
   preview: string;
 }
 
-interface FactCheckResult {
-  credibility_score: number;
-  verdict: "verified" | "mostly_true" | "mixed" | "unverified" | "false";
-  analysis: string;
-  sources: { title: string; url: string; snippet: string }[];
-  claims_checked: number;
-}
-
 interface DocFactCheckState {
   [docIndex: number]: {
     isLoading: boolean;
     result: FactCheckResult | null;
+  };
+}
+
+interface DocKnowledgeCheckState {
+  [docIndex: number]: {
+    isLoading: boolean;
+    result: KnowledgeCheckResult | null;
   };
 }
 
@@ -56,6 +55,16 @@ export default function DocumentPreviewPanel({
   const [selectedFactCheck, setSelectedFactCheck] = useState<{
     docIndex: number;
     result: FactCheckResult | null;
+    isLoading: boolean;
+  } | null>(null);
+
+  // Knowledge check states
+  const [knowledgeCheckStates, setKnowledgeCheckStates] = useState<DocKnowledgeCheckState>({});
+  const [knowledgeCheckModalOpen, setKnowledgeCheckModalOpen] = useState(false);
+  const [knowledgeCheckingAll, setKnowledgeCheckingAll] = useState(false);
+  const [selectedKnowledgeCheck, setSelectedKnowledgeCheck] = useState<{
+    docIndex: number;
+    result: KnowledgeCheckResult | null;
     isLoading: boolean;
   } | null>(null);
 
@@ -299,6 +308,133 @@ export default function DocumentPreviewPanel({
     setFactCheckingAll(false);
   };
 
+  // Knowledge check a single document
+  const handleKnowledgeCheck = async (docIndex: number, docContent: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // If we already have a result, just show it
+    const existingState = knowledgeCheckStates[docIndex];
+    if (existingState?.result) {
+      setSelectedKnowledgeCheck({
+        docIndex,
+        result: existingState.result,
+        isLoading: false,
+      });
+      setKnowledgeCheckModalOpen(true);
+      return;
+    }
+    
+    // Start knowledge check
+    setKnowledgeCheckStates((prev) => ({
+      ...prev,
+      [docIndex]: { isLoading: true, result: null },
+    }));
+    
+    try {
+      const res = await fetch(`${API_URL}/documents/knowledge-check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content: docContent }),
+      });
+      
+      if (!res.ok) {
+        throw new Error("Failed to knowledge check");
+      }
+      
+      const result: KnowledgeCheckResult = await res.json();
+      
+      setKnowledgeCheckStates((prev) => ({
+        ...prev,
+        [docIndex]: { isLoading: false, result },
+      }));
+      
+      setSelectedKnowledgeCheck({
+        docIndex,
+        result,
+        isLoading: false,
+      });
+      setKnowledgeCheckModalOpen(true);
+    } catch (error) {
+      console.error("Knowledge check error:", error);
+      setKnowledgeCheckStates((prev) => ({
+        ...prev,
+        [docIndex]: { isLoading: false, result: null },
+      }));
+    }
+  };
+  
+  const handleShowKnowledgeCheckResult = (docIndex: number) => {
+    const state = knowledgeCheckStates[docIndex];
+    if (state?.result) {
+      setSelectedKnowledgeCheck({
+        docIndex,
+        result: state.result,
+        isLoading: false,
+      });
+      setKnowledgeCheckModalOpen(true);
+    }
+  };
+
+  // Knowledge check all documents in parallel
+  const handleKnowledgeCheckAll = async () => {
+    if (knowledgeCheckingAll || documents.length === 0) return;
+    
+    setKnowledgeCheckingAll(true);
+    
+    // Filter documents that need checking
+    const docsToCheck = documents.filter(doc => !knowledgeCheckStates[doc.index]?.result);
+    
+    if (docsToCheck.length === 0) {
+      setKnowledgeCheckingAll(false);
+      return;
+    }
+    
+    // Set all to loading
+    setKnowledgeCheckStates((prev) => {
+      const newState = { ...prev };
+      docsToCheck.forEach(doc => {
+        newState[doc.index] = { isLoading: true, result: null };
+      });
+      return newState;
+    });
+    
+    // Check all in parallel
+    await Promise.all(
+      docsToCheck.map(async (doc) => {
+        try {
+          const res = await fetch(`${API_URL}/documents/knowledge-check`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ content: doc.content }),
+          });
+          
+          if (res.ok) {
+            const result: KnowledgeCheckResult = await res.json();
+            setKnowledgeCheckStates((prev) => ({
+              ...prev,
+              [doc.index]: { isLoading: false, result },
+            }));
+          } else {
+            setKnowledgeCheckStates((prev) => ({
+              ...prev,
+              [doc.index]: { isLoading: false, result: null },
+            }));
+          }
+        } catch (error) {
+          console.error("Knowledge check error:", error);
+          setKnowledgeCheckStates((prev) => ({
+            ...prev,
+            [doc.index]: { isLoading: false, result: null },
+          }));
+        }
+      })
+    );
+    
+    setKnowledgeCheckingAll(false);
+  };
+
   if (documents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8">
@@ -324,6 +460,20 @@ export default function DocumentPreviewPanel({
           <span className="text-xs text-slate-400">
             {content.length.toLocaleString()} chars
           </span>
+          {documents.length > 0 && (
+            <button
+              onClick={handleKnowledgeCheckAll}
+              disabled={knowledgeCheckingAll}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Knowledge check all documents"
+            >
+              {knowledgeCheckingAll ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <BookMarked className="w-3 h-3" />
+              )}
+            </button>
+          )}
           {documents.length > 0 && (
             <button
               onClick={handleFactCheckAll}
@@ -384,12 +534,39 @@ export default function DocumentPreviewPanel({
                 </span>
               </div>
               <div className="flex items-center gap-1">
+                {/* Knowledge Check Badge or Button */}
+                {knowledgeCheckStates[doc.index]?.result ? (
+                  <CredibilityBadge
+                    score={knowledgeCheckStates[doc.index].result!.consistency_score}
+                    verdict={knowledgeCheckStates[doc.index].result!.verdict}
+                    onClick={() => handleShowKnowledgeCheckResult(doc.index)}
+                    mode="knowledge"
+                  />
+                ) : (
+                  <button
+                    onClick={(e) => handleKnowledgeCheck(doc.index, doc.content, e)}
+                    disabled={knowledgeCheckStates[doc.index]?.isLoading}
+                    className={`p-1.5 rounded-md transition-colors ${
+                      knowledgeCheckStates[doc.index]?.isLoading
+                        ? "bg-purple-100 text-purple-600"
+                        : "text-slate-400 hover:text-purple-600 hover:bg-purple-50 opacity-0 group-hover:opacity-100"
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    title="Knowledge check this document"
+                  >
+                    {knowledgeCheckStates[doc.index]?.isLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <BookMarked className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
                 {/* Fact Check Badge or Button */}
                 {factCheckStates[doc.index]?.result ? (
                   <CredibilityBadge
                     score={factCheckStates[doc.index].result!.credibility_score}
                     verdict={factCheckStates[doc.index].result!.verdict}
                     onClick={() => handleShowFactCheckResult(doc.index)}
+                    mode="fact"
                   />
                 ) : (
                   <button
@@ -469,6 +646,7 @@ export default function DocumentPreviewPanel({
         }}
         result={selectedFactCheck?.result || null}
         isLoading={selectedFactCheck?.isLoading || false}
+        mode="fact"
         onRetry={selectedFactCheck ? () => {
           const docIndex = selectedFactCheck.docIndex;
           const doc = documents[docIndex];
@@ -513,6 +691,67 @@ export default function DocumentPreviewPanel({
                   [docIndex]: { isLoading: false, result: null },
                 }));
                 setSelectedFactCheck((prev) =>
+                  prev ? { ...prev, isLoading: false } : null
+                );
+              });
+          }
+        } : undefined}
+      />
+
+      {/* Knowledge Check Modal */}
+      <FactCheckModal
+        isOpen={knowledgeCheckModalOpen}
+        onClose={() => {
+          setKnowledgeCheckModalOpen(false);
+          setSelectedKnowledgeCheck(null);
+        }}
+        result={selectedKnowledgeCheck?.result || null}
+        isLoading={selectedKnowledgeCheck?.isLoading || false}
+        mode="knowledge"
+        onRetry={selectedKnowledgeCheck ? () => {
+          const docIndex = selectedKnowledgeCheck.docIndex;
+          const doc = documents[docIndex];
+          if (doc) {
+            // Clear existing result and retry
+            setKnowledgeCheckStates((prev) => ({
+              ...prev,
+              [docIndex]: { isLoading: true, result: null },
+            }));
+            setSelectedKnowledgeCheck({
+              docIndex,
+              result: null,
+              isLoading: true,
+            });
+            
+            // Trigger new knowledge check
+            fetch(`${API_URL}/documents/knowledge-check`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ content: doc.content }),
+            })
+              .then((res) => {
+                if (!res.ok) throw new Error("Failed to knowledge check");
+                return res.json();
+              })
+              .then((result: KnowledgeCheckResult) => {
+                setKnowledgeCheckStates((prev) => ({
+                  ...prev,
+                  [docIndex]: { isLoading: false, result },
+                }));
+                setSelectedKnowledgeCheck({
+                  docIndex,
+                  result,
+                  isLoading: false,
+                });
+              })
+              .catch((error) => {
+                console.error("Knowledge check error:", error);
+                setKnowledgeCheckStates((prev) => ({
+                  ...prev,
+                  [docIndex]: { isLoading: false, result: null },
+                }));
+                setSelectedKnowledgeCheck((prev) =>
                   prev ? { ...prev, isLoading: false } : null
                 );
               });
