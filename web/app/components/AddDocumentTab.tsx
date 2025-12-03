@@ -1,8 +1,23 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon, FileUp, PanelLeftClose, PanelLeft, Sparkles, Globe, X } from "lucide-react";
 import DocumentPreviewPanel from "./DocumentPreviewPanel";
+
+// Portal component for rendering modals outside of component hierarchy
+function Portal({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+  
+  if (!mounted) return null;
+  
+  return createPortal(children, document.body);
+}
 
 interface DocumentGroup {
   id: number;
@@ -752,77 +767,86 @@ export default function AddDocumentTab() {
           </div>
         </div>
 
-        {/* URL Import Modal */}
+        {/* URL Import Modal - Using Portal to escape stacking context */}
         {showUrlModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full animate-in fade-in zoom-in-95">
-              <div className="flex items-center justify-between p-4 border-b border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <Globe className="w-5 h-5 text-green-600" />
+          <Portal>
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+              <div
+                className="absolute inset-0"
+                onClick={() => {
+                  setShowUrlModal(false);
+                  setUrlInput("");
+                }}
+              />
+              <div className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full animate-in fade-in zoom-in-95">
+                <div className="flex items-center justify-between p-4 border-b border-slate-200">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-green-100 rounded-lg">
+                      <Globe className="w-5 h-5 text-green-600" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900">Import from URL</h3>
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900">Import from URL</h3>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowUrlModal(false);
-                    setUrlInput("");
-                  }}
-                  className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="p-4 space-y-4">
-                <p className="text-sm text-slate-600">
-                  Enter a URL to extract and import its content as Markdown.
-                </p>
-                <input
-                  type="url"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://example.com/article"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && urlInput.trim()) {
-                      handleUrlImport();
-                    }
-                  }}
-                />
-                <div className="flex gap-3 justify-end">
                   <button
-                    type="button"
                     onClick={() => {
                       setShowUrlModal(false);
                       setUrlInput("");
                     }}
-                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                    className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
                   >
-                    Cancel
+                    <X className="w-5 h-5" />
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleUrlImport}
-                    disabled={!urlInput.trim() || isImportingUrl}
-                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {isImportingUrl ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Importing...
-                      </>
-                    ) : (
-                      <>
-                        <Globe className="w-4 h-4" />
-                        Import
-                      </>
-                    )}
-                  </button>
+                </div>
+                <div className="p-4 space-y-4">
+                  <p className="text-sm text-slate-600">
+                    Enter a URL to extract and import its content as Markdown.
+                  </p>
+                  <input
+                    type="url"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    placeholder="https://example.com/article"
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && urlInput.trim()) {
+                        handleUrlImport();
+                      }
+                    }}
+                  />
+                  <div className="flex gap-3 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowUrlModal(false);
+                        setUrlInput("");
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleUrlImport}
+                      disabled={!urlInput.trim() || isImportingUrl}
+                      className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {isImportingUrl ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Importing...
+                        </>
+                      ) : (
+                        <>
+                          <Globe className="w-4 h-4" />
+                          Import
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </Portal>
         )}
       </div>
     );
@@ -1195,77 +1219,86 @@ export default function AddDocumentTab() {
         </div>
       </div>
 
-      {/* URL Import Modal */}
+      {/* URL Import Modal - Using Portal to escape stacking context */}
       {showUrlModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between p-4 border-b border-slate-200">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <Globe className="w-5 h-5 text-green-600" />
+        <Portal>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+            <div
+              className="absolute inset-0"
+              onClick={() => {
+                setShowUrlModal(false);
+                setUrlInput("");
+              }}
+            />
+            <div className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between p-4 border-b border-slate-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <Globe className="w-5 h-5 text-green-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900">Import from URL</h3>
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900">Import from URL</h3>
-              </div>
-              <button
-                onClick={() => {
-                  setShowUrlModal(false);
-                  setUrlInput("");
-                }}
-                className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <p className="text-sm text-slate-600">
-                Enter a URL to extract and import its content as Markdown.
-              </p>
-              <input
-                type="url"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="https://example.com/article"
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && urlInput.trim()) {
-                    handleUrlImport();
-                  }
-                }}
-              />
-              <div className="flex gap-3 justify-end">
                 <button
-                  type="button"
                   onClick={() => {
                     setShowUrlModal(false);
                     setUrlInput("");
                   }}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                  className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
                 >
-                  Cancel
+                  <X className="w-5 h-5" />
                 </button>
-                <button
-                  type="button"
-                  onClick={handleUrlImport}
-                  disabled={!urlInput.trim() || isImportingUrl}
-                  className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {isImportingUrl ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Importing...
-                    </>
-                  ) : (
-                    <>
-                      <Globe className="w-4 h-4" />
-                      Import
-                    </>
-                  )}
-                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                <p className="text-sm text-slate-600">
+                  Enter a URL to extract and import its content as Markdown.
+                </p>
+                <input
+                  type="url"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder="https://example.com/article"
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && urlInput.trim()) {
+                      handleUrlImport();
+                    }
+                  }}
+                />
+                <div className="flex gap-3 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUrlModal(false);
+                      setUrlInput("");
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleUrlImport}
+                    disabled={!urlInput.trim() || isImportingUrl}
+                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {isImportingUrl ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Importing...
+                      </>
+                    ) : (
+                      <>
+                        <Globe className="w-4 h-4" />
+                        Import
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </Portal>
       )}
     </div>
   );
