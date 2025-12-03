@@ -554,7 +554,7 @@ Search results from web:
         # Parse the analysis response
         try:
             analysis_text = analysis_response.strip()
-            
+
             # Remove markdown code blocks if present
             if analysis_text.startswith("```"):
                 lines = analysis_text.split("\n")
@@ -564,7 +564,7 @@ Search results from web:
                 if lines and lines[-1].strip().startswith("```"):
                     lines = lines[:-1]
                 analysis_text = "\n".join(lines)
-            
+
             # Try to extract JSON object from the response
             # Handle case where LLM adds extra text before/after JSON
             import re
@@ -577,8 +577,7 @@ Search results from web:
                 json_match = re.search(r'\{[^{}]+\}', analysis_text)
                 if json_match:
                     analysis_text = json_match.group()
-            
-            print(f"Parsing JSON from: {analysis_text[:200]}...")
+
             analysis_data = json.loads(analysis_text)
 
             credibility_score = int(analysis_data.get("credibility_score", 50))

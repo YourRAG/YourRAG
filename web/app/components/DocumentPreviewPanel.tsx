@@ -52,6 +52,7 @@ export default function DocumentPreviewPanel({
   // Fact check states
   const [factCheckStates, setFactCheckStates] = useState<DocFactCheckState>({});
   const [factCheckModalOpen, setFactCheckModalOpen] = useState(false);
+  const [factCheckingAll, setFactCheckingAll] = useState(false);
   const [selectedFactCheck, setSelectedFactCheck] = useState<{
     docIndex: number;
     result: FactCheckResult | null;
@@ -238,6 +239,66 @@ export default function DocumentPreviewPanel({
     }
   };
 
+  // Fact check all documents in parallel
+  const handleFactCheckAll = async () => {
+    if (factCheckingAll || documents.length === 0) return;
+    
+    setFactCheckingAll(true);
+    
+    // Filter documents that need checking
+    const docsToCheck = documents.filter(doc => !factCheckStates[doc.index]?.result);
+    
+    if (docsToCheck.length === 0) {
+      setFactCheckingAll(false);
+      return;
+    }
+    
+    // Set all to loading
+    setFactCheckStates((prev) => {
+      const newState = { ...prev };
+      docsToCheck.forEach(doc => {
+        newState[doc.index] = { isLoading: true, result: null };
+      });
+      return newState;
+    });
+    
+    // Check all in parallel
+    const currentTime = new Date().toISOString();
+    await Promise.all(
+      docsToCheck.map(async (doc) => {
+        try {
+          const res = await fetch(`${API_URL}/documents/fact-check`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ content: doc.content, current_time: currentTime }),
+          });
+          
+          if (res.ok) {
+            const result: FactCheckResult = await res.json();
+            setFactCheckStates((prev) => ({
+              ...prev,
+              [doc.index]: { isLoading: false, result },
+            }));
+          } else {
+            setFactCheckStates((prev) => ({
+              ...prev,
+              [doc.index]: { isLoading: false, result: null },
+            }));
+          }
+        } catch (error) {
+          console.error("Fact check error:", error);
+          setFactCheckStates((prev) => ({
+            ...prev,
+            [doc.index]: { isLoading: false, result: null },
+          }));
+        }
+      })
+    );
+    
+    setFactCheckingAll(false);
+  };
+
   if (documents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8">
@@ -263,6 +324,20 @@ export default function DocumentPreviewPanel({
           <span className="text-xs text-slate-400">
             {content.length.toLocaleString()} chars
           </span>
+          {documents.length > 0 && (
+            <button
+              onClick={handleFactCheckAll}
+              disabled={factCheckingAll}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Fact check all documents"
+            >
+              {factCheckingAll ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Shield className="w-3 h-3" />
+              )}
+            </button>
+          )}
           {onChunkAll && documents.length > 0 && (
             <button
               onClick={handleChunkAll}
