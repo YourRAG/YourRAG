@@ -53,7 +53,7 @@ class LLMService:
                 f"[Document {i+1}]\n{ctx['content']}"
                 for i, ctx in enumerate(contexts)
             ])
-            
+
             user_content = f"""Please answer the question based on the provided context documents.
 
 Context:
@@ -84,10 +84,10 @@ Instructions for interactions without knowledge base context:
 3. **General Rule**: Be helpful and human-like. Avoid repetitive or robotic refusals like "I cannot find relevant documents" unless it's truly a specific query that failed."""
 
         messages = [{"role": "system", "content": system_prompt}]
-        
+
         if history:
             messages.extend(history)
-            
+
         messages.append({"role": "user", "content": user_content})
 
         return messages
@@ -98,6 +98,7 @@ Instructions for interactions without knowledge base context:
             # Disable proxies for local connections
             proxies = {"all://": None}
             async with httpx.AsyncClient(proxies=proxies) as client:
+
                 response = await client.get(
                     f"{self.api_url.rsplit('/chat/completions', 1)[0]}/models",
                     headers=self.headers,
@@ -191,12 +192,12 @@ Instructions for interactions without knowledge base context:
                 "max_tokens": max_tokens,
                 "stream": True
             }
-            
+
             # Disable proxies for local connections to prevent "All connection attempts failed" errors
             proxies = {"all://": None}
-            
+
             should_retry = False
-            
+
             try:
                 async with httpx.AsyncClient(proxies=proxies) as client:
                     async with client.stream(
@@ -210,7 +211,7 @@ Instructions for interactions without knowledge base context:
                             error_content = await response.aread()
                             error_msg = error_content.decode('utf-8')
                             print(f"LLM API Error: {response.status_code} - {error_msg}")
-                            
+
                             # Handle "Model does not exist" error
                             if response.status_code == 400 and "Model does not exist" in error_msg:
                                 if attempt < max_retries:
@@ -220,7 +221,7 @@ Instructions for interactions without knowledge base context:
                                         available_models = await self.list_models()
                                         # Filter out the current failed model if it's in the list (it might be if list_models fell back)
                                         candidates = [m["id"] for m in available_models if m["id"] != model_to_use]
-                                        
+
                                         if candidates:
                                             new_model = candidates[0]
                                             print(f"Switching to available model: {new_model}")
@@ -238,7 +239,7 @@ Instructions for interactions without knowledge base context:
                                                 should_retry = True
                                     except Exception as e:
                                         print(f"Error during model recovery: {e}")
-                            
+
                             if not should_retry:
                                 response.raise_for_status()
 
@@ -255,25 +256,25 @@ Instructions for interactions without knowledge base context:
                                     if "choices" in data and len(data["choices"]) > 0:
                                         delta = data["choices"][0].get("delta", {})
                                         chunk: StreamChunk = {}
-                                        
+
                                         # Extract regular content
                                         content = delta.get("content", "")
                                         if content:
                                             chunk["content"] = content
-                                        
+
                                         # Extract reasoning content - support both field names:
                                         # - reasoning_content: used by DeepSeek-R1, QwQ, vLLM, etc.
                                         # - reasoning: used by some other providers
                                         reasoning_content = delta.get("reasoning_content") or delta.get("reasoning", "")
                                         if reasoning_content:
                                             chunk["reasoning_content"] = reasoning_content
-                                        
+
                                         # Only yield if there's actual content
                                         if chunk:
                                             yield chunk
                                 except json.JSONDecodeError:
                                     continue
-                
+
                 if not should_retry:
                     break
 

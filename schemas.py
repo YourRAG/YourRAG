@@ -398,3 +398,30 @@ class UserDataExportResponse(BaseModel):
     activities: Optional[List[ExportActivityItem]] = None
     transactions: Optional[List[ExportTransactionItem]] = None
     apiKeys: Optional[List[ExportApiKeyItem]] = None
+
+
+# =====================
+# Fact Check Schemas
+# =====================
+
+
+class FactCheckSource(BaseModel):
+    """A source used for fact checking."""
+    title: str
+    url: str
+    snippet: str
+
+
+class FactCheckRequest(BaseModel):
+    """Request for fact checking a document."""
+    content: str
+    current_time: Optional[str] = None  # ISO 8601 format from client browser
+
+
+class FactCheckResponse(BaseModel):
+    """Response containing fact check results."""
+    credibility_score: int  # 0-100 percentage
+    verdict: str  # "verified" | "mostly_true" | "mixed" | "unverified" | "false"
+    analysis: str  # Detailed analysis explanation
+    sources: List[FactCheckSource]  # Sources used for verification
+    claims_checked: int  # Number of claims checked

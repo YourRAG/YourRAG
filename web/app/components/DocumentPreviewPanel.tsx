@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FileText, ChevronRight, Hash, Scissors, Loader2, Sparkles } from "lucide-react";
+import { FileText, ChevronRight, Hash, Scissors, Loader2, Sparkles, Shield } from "lucide-react";
 import Markdown from "./Markdown";
+import FactCheckModal, { CredibilityBadge } from "./FactCheckModal";
 
 interface DocumentPreviewPanelProps {
   content: string;
@@ -21,6 +22,21 @@ interface ParsedDocument {
   preview: string;
 }
 
+interface FactCheckResult {
+  credibility_score: number;
+  verdict: "verified" | "mostly_true" | "mixed" | "unverified" | "false";
+  analysis: string;
+  sources: { title: string; url: string; snippet: string }[];
+  claims_checked: number;
+}
+
+interface DocFactCheckState {
+  [docIndex: number]: {
+    isLoading: boolean;
+    result: FactCheckResult | null;
+  };
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 export default function DocumentPreviewPanel({
@@ -32,6 +48,15 @@ export default function DocumentPreviewPanel({
 }: DocumentPreviewPanelProps) {
   const [chunkingIndex, setChunkingIndex] = useState<number | null>(null);
   const [chunkingAll, setChunkingAll] = useState(false);
+  
+  // Fact check states
+  const [factCheckStates, setFactCheckStates] = useState<DocFactCheckState>({});
+  const [factCheckModalOpen, setFactCheckModalOpen] = useState(false);
+  const [selectedFactCheck, setSelectedFactCheck] = useState<{
+    docIndex: number;
+    result: FactCheckResult | null;
+    isLoading: boolean;
+  } | null>(null);
 
   const documents = useMemo((): ParsedDocument[] => {
     if (!content.trim()) return [];
@@ -142,6 +167,77 @@ export default function DocumentPreviewPanel({
     }
   };
 
+  // Fact check a single document
+  const handleFactCheck = async (docIndex: number, docContent: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // If we already have a result, just show it
+    const existingState = factCheckStates[docIndex];
+    if (existingState?.result) {
+      setSelectedFactCheck({
+        docIndex,
+        result: existingState.result,
+        isLoading: false,
+      });
+      setFactCheckModalOpen(true);
+      return;
+    }
+    
+    // Start fact check - don't open modal yet, wait for result
+    setFactCheckStates((prev) => ({
+      ...prev,
+      [docIndex]: { isLoading: true, result: null },
+    }));
+    
+    try {
+      const res = await fetch(`${API_URL}/documents/fact-check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content: docContent, current_time: new Date().toISOString() }),
+      });
+      
+      if (!res.ok) {
+        throw new Error("Failed to fact check");
+      }
+      
+      const result: FactCheckResult = await res.json();
+      
+      setFactCheckStates((prev) => ({
+        ...prev,
+        [docIndex]: { isLoading: false, result },
+      }));
+      
+      setSelectedFactCheck({
+        docIndex,
+        result,
+        isLoading: false,
+      });
+      setFactCheckModalOpen(true);
+    } catch (error) {
+      console.error("Fact check error:", error);
+      setFactCheckStates((prev) => ({
+        ...prev,
+        [docIndex]: { isLoading: false, result: null },
+      }));
+      setSelectedFactCheck((prev) =>
+        prev ? { ...prev, isLoading: false } : null
+      );
+    }
+  };
+  
+  const handleShowFactCheckResult = (docIndex: number) => {
+    const state = factCheckStates[docIndex];
+    if (state?.result) {
+      setSelectedFactCheck({
+        docIndex,
+        result: state.result,
+        isLoading: false,
+      });
+      setFactCheckModalOpen(true);
+    }
+  };
+
   if (documents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8">
@@ -213,6 +309,31 @@ export default function DocumentPreviewPanel({
                 </span>
               </div>
               <div className="flex items-center gap-1">
+                {/* Fact Check Badge or Button */}
+                {factCheckStates[doc.index]?.result ? (
+                  <CredibilityBadge
+                    score={factCheckStates[doc.index].result!.credibility_score}
+                    verdict={factCheckStates[doc.index].result!.verdict}
+                    onClick={() => handleShowFactCheckResult(doc.index)}
+                  />
+                ) : (
+                  <button
+                    onClick={(e) => handleFactCheck(doc.index, doc.content, e)}
+                    disabled={factCheckStates[doc.index]?.isLoading}
+                    className={`p-1.5 rounded-md transition-colors ${
+                      factCheckStates[doc.index]?.isLoading
+                        ? "bg-blue-100 text-blue-600"
+                        : "text-slate-400 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover:opacity-100"
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    title="Fact check this document"
+                  >
+                    {factCheckStates[doc.index]?.isLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Shield className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
                 {onChunkDocument && (
                   <button
                     onClick={(e) => handleChunkSingle(doc.index, doc.content, e)}
@@ -263,6 +384,66 @@ export default function DocumentPreviewPanel({
           </div>
         </div>
       )}
+
+      {/* Fact Check Modal */}
+      <FactCheckModal
+        isOpen={factCheckModalOpen}
+        onClose={() => {
+          setFactCheckModalOpen(false);
+          setSelectedFactCheck(null);
+        }}
+        result={selectedFactCheck?.result || null}
+        isLoading={selectedFactCheck?.isLoading || false}
+        onRetry={selectedFactCheck ? () => {
+          const docIndex = selectedFactCheck.docIndex;
+          const doc = documents[docIndex];
+          if (doc) {
+            // Clear existing result and retry
+            setFactCheckStates((prev) => ({
+              ...prev,
+              [docIndex]: { isLoading: true, result: null },
+            }));
+            setSelectedFactCheck({
+              docIndex,
+              result: null,
+              isLoading: true,
+            });
+            
+            // Trigger new fact check
+            fetch(`${API_URL}/documents/fact-check`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ content: doc.content, current_time: new Date().toISOString() }),
+            })
+              .then((res) => {
+                if (!res.ok) throw new Error("Failed to fact check");
+                return res.json();
+              })
+              .then((result: FactCheckResult) => {
+                setFactCheckStates((prev) => ({
+                  ...prev,
+                  [docIndex]: { isLoading: false, result },
+                }));
+                setSelectedFactCheck({
+                  docIndex,
+                  result,
+                  isLoading: false,
+                });
+              })
+              .catch((error) => {
+                console.error("Fact check error:", error);
+                setFactCheckStates((prev) => ({
+                  ...prev,
+                  [docIndex]: { isLoading: false, result: null },
+                }));
+                setSelectedFactCheck((prev) =>
+                  prev ? { ...prev, isLoading: false } : null
+                );
+              });
+          }
+        } : undefined}
+      />
     </div>
   );
 }

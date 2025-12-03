@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query, Depends, UploadFile, File, Form
 from typing import Optional, List
+from datetime import datetime
 
 import json
 
@@ -21,6 +22,9 @@ from schemas import (
     GroupImportRequest,
     SmartChunkRequest,
     SmartChunkResponse,
+    FactCheckRequest,
+    FactCheckResponse,
+    FactCheckSource,
 )
 from auth import get_current_user, get_chat_user, prisma
 from document_store import DocumentStore
@@ -31,6 +35,7 @@ from activity_service import (
     record_search,
 )
 from llm_service import LLMService
+from mcp_client import MCPClient
 
 router = APIRouter()
 store = DocumentStore()
@@ -302,12 +307,12 @@ def smart_fallback_chunk(content: str, max_chunk_size: int = 1000) -> List[str]:
     paragraphs = content.split("\n\n")
     chunks = []
     current_chunk = ""
-    
+
     for para in paragraphs:
         para = para.strip()
         if not para:
             continue
-        
+
         if len(current_chunk) + len(para) + 2 <= max_chunk_size:
             if current_chunk:
                 current_chunk += "\n\n" + para
@@ -333,11 +338,283 @@ def smart_fallback_chunk(content: str, max_chunk_size: int = 1000) -> List[str]:
                         if current_chunk:
                             chunks.append(current_chunk)
                         current_chunk = sentence
-    
+
     if current_chunk:
         chunks.append(current_chunk)
-    
+
     return chunks if chunks else [content]
+
+
+@router.post("/documents/fact-check", response_model=FactCheckResponse)
+async def fact_check_document(
+    request: FactCheckRequest, current_user=Depends(get_chat_user)
+):
+    """
+    Fact-check a document by searching for related information online
+    and using AI to analyze credibility.
+
+    Uses Exa search API to find relevant sources and LLM to analyze
+    the document's claims against found evidence.
+    """
+    try:
+        content = request.content.strip()
+        if not content:
+            raise HTTPException(status_code=400, detail="Content cannot be empty")
+
+        # Extract key claims from the content for searching
+        search_queries = []
+
+        try:
+            llm = LLMService()
+
+            # First, extract searchable claims from the document
+            extract_prompt = """Extract the main factual claims from the following text that can be verified through web search.
+Return ONLY a JSON array of 1-5 short search queries (each under 100 chars) that would help verify these claims.
+Focus on specific facts, statistics, dates, names, and verifiable statements.
+
+Example output format:
+["search query 1", "search query 2", "search query 3"]
+
+If the text contains no verifiable factual claims, return: ["general topic of the text"]"""
+
+            claims_response = llm.chat_completion(
+                query=f"Text to analyze:\n\n{content[:2000]}",
+                contexts=[],
+                system_prompt=extract_prompt,
+                temperature=0.2,
+                max_tokens=10000,
+            )
+
+            # Parse the search queries
+            claims_text = claims_response.strip()
+            if claims_text.startswith("```"):
+                lines = claims_text.split("\n")
+                claims_text = "\n".join(
+                    lines[1:-1] if lines[-1].startswith("```") else lines[1:]
+                )
+            search_queries = json.loads(claims_text)
+            if not isinstance(search_queries, list):
+                search_queries = []
+        except Exception as llm_error:
+            print(f"LLM extraction failed: {llm_error}")
+            # Fallback: extract simple keywords manually
+            search_queries = []
+
+        # Fallback: use content snippet if no queries extracted
+        if not search_queries:
+            # Simple keyword extraction fallback
+            words = content.split()
+            if len(words) <= 10:
+                search_queries = [content]
+            else:
+                # Use first sentence or first 100 chars
+                first_sentence = (
+                    content.split(".")[0][:100] if "." in content else content[:100]
+                )
+                search_queries = [first_sentence.strip()]
+
+        # Search for each claim using Exa
+        all_sources: List[FactCheckSource] = []
+        search_results_text = []
+
+        try:
+            mcp_client = MCPClient()
+
+            for query in search_queries[:3]:  # Limit to 3 searches
+                try:
+                    results = mcp_client.search_with_exa(
+                        query=query,
+                        num_results=3,
+                        livecrawl="fallback",
+                        search_type="auto",
+                        context_max_characters=5000,
+                    )
+
+                    for result in results:
+                        if isinstance(result, dict):
+                            text = result.get("text", "")
+                            # Try to extract URL and title from the result
+                            url = result.get("url", "")
+                            title = result.get("title", query[:50])
+
+                            if text:
+                                snippet = (
+                                    text[:500] + "..." if len(text) > 500 else text
+                                )
+                                all_sources.append(
+                                    FactCheckSource(
+                                        title=title or "Source",
+                                        url=url or "",
+                                        snippet=snippet,
+                                    )
+                                )
+                                search_results_text.append(
+                                    f"Source: {title}\n{text[:1000]}"
+                                )
+                except Exception as search_error:
+                    print(f"Search error for query '{query}': {search_error}")
+                    continue
+
+        except Exception as mcp_error:
+            print(f"MCP client error: {mcp_error}")
+            # Return unverified result if search fails
+            return FactCheckResponse(
+                credibility_score=50,
+                verdict="unverified",
+                analysis="Unable to verify: Web search service is currently unavailable. The content could not be fact-checked against online sources.",
+                sources=[],
+                claims_checked=0,
+            )
+
+        # Remove duplicate sources
+        seen_snippets = set()
+        unique_sources = []
+        for source in all_sources:
+            snippet_key = source.snippet[:100]
+            if snippet_key not in seen_snippets:
+                seen_snippets.add(snippet_key)
+                unique_sources.append(source)
+        all_sources = unique_sources[:5]  # Limit to 5 sources
+
+        # Analyze credibility using LLM
+        if not search_results_text:
+            return FactCheckResponse(
+                credibility_score=50,
+                verdict="unverified",
+                analysis="Unable to find relevant online sources to verify this content. The claims could not be cross-referenced with available information.",
+                sources=[],
+                claims_checked=len(search_queries),
+            )
+
+        # 获取当前时间信息
+        current_time_str = request.current_time or datetime.utcnow().isoformat() + "Z"
+        # 解析ISO时间获取可读格式
+        try:
+            dt = datetime.fromisoformat(current_time_str.replace("Z", "+00:00"))
+            readable_date = dt.strftime("%Y年%m月%d日")
+        except:
+            readable_date = "2025年12月"
+
+        analysis_prompt = """You are a fact-checking expert. Analyze the following document against the search results and determine its credibility.
+
+CRITICAL: Today's date is {readable_date} (from user's browser: {current_time}). You MUST use this date when evaluating the timeliness of sources and claims.
+
+IMPORTANT: Respond ONLY with a valid JSON object in this exact format:
+{{"credibility_score": <number 0-100>, "verdict": "<verified|mostly_true|mixed|unverified|false>", "analysis": "<2-3 sentence explanation in Chinese>"}}
+
+Scoring guidelines:
+- 90-100 (verified): All major claims are confirmed by multiple reliable sources
+- 70-89 (mostly_true): Most claims are accurate with minor discrepancies
+- 40-69 (mixed): Some claims are verified, others are not or contradict sources
+- 20-39 (unverified): Cannot find sufficient evidence to verify most claims
+- 0-19 (false): Major claims contradict reliable sources
+
+When analyzing timeliness:
+- Today is {readable_date}. Use this to assess source freshness.
+- Sources from late 2024 or 2025 are recent and relevant.
+- Consider whether the claims are about current events or historical facts.
+
+Document to verify:
+---
+{document}
+---
+
+Search results from web:
+---
+{sources}
+---"""
+
+        try:
+            llm_service = LLMService()
+            analysis_response = llm_service.chat_completion(
+                query=analysis_prompt.format(
+                    readable_date=readable_date,
+                    current_time=current_time_str,
+                    document=content[:2000],
+                    sources="\n\n".join(search_results_text[:3]),
+                ),
+                contexts=[],
+                system_prompt=f"You are a professional fact-checker. Today's date is {readable_date}. Respond only with valid JSON.",
+                temperature=0.3,
+                max_tokens=1000,
+            )
+        except Exception as analysis_error:
+            print(f"LLM analysis API failed: {analysis_error}")
+            import traceback
+            traceback.print_exc()
+            # Return partial result with sources but no AI analysis
+            return FactCheckResponse(
+                credibility_score=50,
+                verdict="unverified",
+                analysis="AI analysis unavailable. Please review the sources manually.",
+                sources=all_sources,
+                claims_checked=len(search_queries),
+            )
+
+        # Parse the analysis response
+        try:
+            analysis_text = analysis_response.strip()
+            
+            # Remove markdown code blocks if present
+            if analysis_text.startswith("```"):
+                lines = analysis_text.split("\n")
+                # Remove first and last lines if they are code fence markers
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].strip().startswith("```"):
+                    lines = lines[:-1]
+                analysis_text = "\n".join(lines)
+            
+            # Try to extract JSON object from the response
+            # Handle case where LLM adds extra text before/after JSON
+            import re
+            # Find JSON object that contains credibility_score
+            json_match = re.search(r'\{[\s\S]*?"credibility_score"[\s\S]*?"verdict"[\s\S]*?"analysis"[\s\S]*?\}', analysis_text)
+            if json_match:
+                analysis_text = json_match.group()
+            else:
+                # Try simpler match for any JSON-like object
+                json_match = re.search(r'\{[^{}]+\}', analysis_text)
+                if json_match:
+                    analysis_text = json_match.group()
+            
+            print(f"Parsing JSON from: {analysis_text[:200]}...")
+            analysis_data = json.loads(analysis_text)
+
+            credibility_score = int(analysis_data.get("credibility_score", 50))
+            credibility_score = max(0, min(100, credibility_score))
+
+            verdict = analysis_data.get("verdict", "unverified")
+            if verdict not in [
+                "verified",
+                "mostly_true",
+                "mixed",
+                "unverified",
+                "false",
+            ]:
+                verdict = "unverified"
+
+            analysis = analysis_data.get("analysis", "Analysis could not be generated.")
+
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            print(f"Failed to parse analysis response: {e}")
+            credibility_score = 50
+            verdict = "unverified"
+            analysis = "Unable to complete credibility analysis. Please try again."
+
+        return FactCheckResponse(
+            credibility_score=credibility_score,
+            verdict=verdict,
+            analysis=analysis,
+            sources=all_sources,
+            claims_checked=len(search_queries),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Fact check error: {e}")
+        raise HTTPException(status_code=500, detail=f"Fact check failed: {str(e)}")
 
 
 @router.post("/documents/parse")
