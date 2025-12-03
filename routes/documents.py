@@ -25,6 +25,8 @@ from schemas import (
     FactCheckRequest,
     FactCheckResponse,
     FactCheckSource,
+    UrlImportRequest,
+    UrlImportResponse,
 )
 from auth import get_current_user, get_chat_user, prisma
 from document_store import DocumentStore
@@ -1181,3 +1183,120 @@ async def api_delete_group_by_name(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# URL Import Routes
+# =====================
+
+
+@router.post("/documents/import-url", response_model=UrlImportResponse)
+async def import_from_url(
+    request: UrlImportRequest,
+    current_user=Depends(get_chat_user)
+):
+    """
+    Import content from a URL using Exa crawling API.
+    
+    Extracts the content from the given URL and converts it to Markdown format
+    using LLM for better formatting.
+    """
+    try:
+        url = request.url.strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="URL cannot be empty")
+        
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+        
+        # Use MCP client to crawl the URL
+        mcp_client = MCPClient()
+        
+        try:
+            results = mcp_client.crawl_url_with_exa(
+                url=url,
+                max_characters=request.max_characters
+            )
+        except Exception as crawl_error:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to crawl URL: {str(crawl_error)}"
+            )
+        
+        # Extract content from results
+        raw_content = ""
+        title = None
+        
+        for result in results:
+            if isinstance(result, dict):
+                text = result.get("text", "")
+                if text:
+                    raw_content += text + "\n\n"
+                if not title:
+                    title = result.get("title", "")
+        
+        if not raw_content.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="No content could be extracted from the URL"
+            )
+        
+        # Use LLM to convert content to Markdown
+        llm = LLMService()
+        
+        system_prompt = """You are a content formatting expert. Your task is to convert the given web content into clean, well-structured Markdown format.
+
+Rules:
+1. Preserve the original meaning and information
+2. Use appropriate Markdown formatting (headers, lists, code blocks, links, etc.)
+3. Remove any unnecessary HTML artifacts, navigation elements, or boilerplate text
+4. Organize the content with clear section headers where appropriate
+5. Keep the content concise but complete
+6. Do NOT add any commentary or explanation - only output the formatted Markdown content
+7. If the content is already well-formatted, just clean it up slightly"""
+
+        user_prompt = f"""Convert the following web content to clean Markdown format:
+
+---
+{raw_content[:15000]}
+---
+
+Output ONLY the formatted Markdown content, nothing else."""
+
+        try:
+            markdown_content = llm.chat_completion(
+                query=user_prompt,
+                contexts=[],
+                system_prompt=system_prompt,
+                temperature=0.3,
+                max_tokens=4096
+            )
+            
+            # Clean up the response
+            markdown_content = markdown_content.strip()
+            
+            # Remove markdown code block wrapper if LLM added it
+            if markdown_content.startswith("```markdown"):
+                lines = markdown_content.split("\n")
+                markdown_content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+            elif markdown_content.startswith("```"):
+                lines = markdown_content.split("\n")
+                markdown_content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+                
+        except Exception as llm_error:
+            print(f"LLM formatting failed: {llm_error}")
+            # Fallback to raw content if LLM fails
+            markdown_content = raw_content.strip()
+        
+        return UrlImportResponse(
+            content=markdown_content,
+            source_url=url,
+            title=title,
+            content_length=len(markdown_content)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"URL import error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to import from URL: {str(e)}")

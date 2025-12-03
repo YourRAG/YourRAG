@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon, FileUp, PanelLeftClose, PanelLeft, Sparkles } from "lucide-react";
+import { Loader2, Plus, Split, FileText, CheckCircle2, AlertCircle, Upload, Code, Copy, Check, Folder, FolderPlus, ChevronDown, Tag, Link as LinkIcon, FileUp, PanelLeftClose, PanelLeft, Sparkles, Globe, X } from "lucide-react";
 import DocumentPreviewPanel from "./DocumentPreviewPanel";
 
 interface DocumentGroup {
@@ -37,6 +37,11 @@ export default function AddDocumentTab() {
   // Preview panel state
   const [showPreviewPanel, setShowPreviewPanel] = useState(true);
   const [activeDocIndex, setActiveDocIndex] = useState<number | undefined>(undefined);
+
+  // URL import state
+  const [showUrlModal, setShowUrlModal] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [isImportingUrl, setIsImportingUrl] = useState(false);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -202,6 +207,49 @@ export default function AddDocumentTab() {
       const separator = "\n\n--------\n\n";
       return prev + separator;
     });
+  };
+
+  const handleUrlImport = async () => {
+    if (!urlInput.trim() || isImportingUrl) return;
+
+    setIsImportingUrl(true);
+    setMessage("Importing from URL...");
+
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/documents/import-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          url: urlInput.trim(),
+          max_characters: 15000,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || "Failed to import from URL");
+      }
+
+      const data = await res.json();
+
+      if (data.content) {
+        setContent((prev) => {
+          const separator = "\n\n--------\n\n";
+          return prev.trim() ? prev + separator + data.content : data.content;
+        });
+        setMessage(`Imported from URL successfully! (${data.content_length} chars)`);
+        setShowUrlModal(false);
+        setUrlInput("");
+        setTimeout(() => setMessage(""), 3000);
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage(error instanceof Error ? `Error: ${error.message}` : "Error importing from URL");
+      setTimeout(() => setMessage(""), 5000);
+    } finally {
+      setIsImportingUrl(false);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -562,6 +610,17 @@ export default function AddDocumentTab() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setShowUrlModal(true)}
+                        disabled={isImportingUrl}
+                        className="text-xs flex items-center gap-1 text-green-600 hover:text-green-700 font-medium px-2 py-1 rounded-lg bg-green-50 hover:bg-green-100 transition-colors disabled:opacity-50"
+                        title="Import from URL"
+                      >
+                        {isImportingUrl ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
+                        <span className="hidden xs:inline">URL</span>
+                        <span className="xs:hidden">URL</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={insertSeparator}
                         className="text-xs flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors"
                         title="Insert Separator"
@@ -692,6 +751,79 @@ export default function AddDocumentTab() {
             </div>
           </div>
         </div>
+
+        {/* URL Import Modal */}
+        {showUrlModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between p-4 border-b border-slate-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <Globe className="w-5 h-5 text-green-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900">Import from URL</h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowUrlModal(false);
+                    setUrlInput("");
+                  }}
+                  className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                <p className="text-sm text-slate-600">
+                  Enter a URL to extract and import its content as Markdown.
+                </p>
+                <input
+                  type="url"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder="https://example.com/article"
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && urlInput.trim()) {
+                      handleUrlImport();
+                    }
+                  }}
+                />
+                <div className="flex gap-3 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUrlModal(false);
+                      setUrlInput("");
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleUrlImport}
+                    disabled={!urlInput.trim() || isImportingUrl}
+                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {isImportingUrl ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Importing...
+                      </>
+                    ) : (
+                      <>
+                        <Globe className="w-4 h-4" />
+                        Import
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -888,6 +1020,17 @@ export default function AddDocumentTab() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setShowUrlModal(true)}
+                    disabled={isImportingUrl}
+                    className="text-xs flex items-center gap-1 sm:gap-1.5 text-green-600 hover:text-green-700 font-medium px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-green-50 hover:bg-green-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Import content from a URL"
+                  >
+                    {isImportingUrl ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
+                    <span className="hidden sm:inline">Import URL</span>
+                    <span className="sm:hidden">URL</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={insertSeparator}
                     className="text-xs flex items-center gap-1 sm:gap-1.5 text-blue-600 hover:text-blue-700 font-medium px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors"
                     title="Insert separator to add multiple documents at once"
@@ -1051,6 +1194,79 @@ export default function AddDocumentTab() {
           </form>
         </div>
       </div>
+
+      {/* URL Import Modal */}
+      {showUrlModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Globe className="w-5 h-5 text-green-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900">Import from URL</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowUrlModal(false);
+                  setUrlInput("");
+                }}
+                className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-slate-600">
+                Enter a URL to extract and import its content as Markdown.
+              </p>
+              <input
+                type="url"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder="https://example.com/article"
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && urlInput.trim()) {
+                    handleUrlImport();
+                  }
+                }}
+              />
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUrlModal(false);
+                    setUrlInput("");
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUrlImport}
+                  disabled={!urlInput.trim() || isImportingUrl}
+                  className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isImportingUrl ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="w-4 h-4" />
+                      Import
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

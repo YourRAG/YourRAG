@@ -425,3 +425,22 @@ class FactCheckResponse(BaseModel):
     analysis: str  # Detailed analysis explanation
     sources: List[FactCheckSource]  # Sources used for verification
     claims_checked: int  # Number of claims checked
+
+
+# =====================
+# URL Import Schemas
+# =====================
+
+
+class UrlImportRequest(BaseModel):
+    """Request for importing content from a URL."""
+    url: str
+    max_characters: int = 10000
+
+
+class UrlImportResponse(BaseModel):
+    """Response containing imported content from URL."""
+    content: str
+    source_url: str
+    title: Optional[str] = None
+    content_length: int
