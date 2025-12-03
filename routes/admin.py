@@ -15,11 +15,13 @@ from schemas import (
     ApiKeyCreateInput,
     ApiKeyResponse,
     ActivitiesResponse,
+    BatchAdjustCreditsRequest,
 )
 from auth import get_current_user, prisma
 from redis_service import RedisService
 from config_service import config_service
 from activity_service import record_settings_update, ActivityService
+from credits_service import CreditsService
 
 router = APIRouter()
 
@@ -109,9 +111,11 @@ async def get_users(
     role: Optional[str] = None,
     min_credits: Optional[int] = Query(None, alias="minCredits"),
     max_credits: Optional[int] = Query(None, alias="maxCredits"),
+    start_date: Optional[str] = Query(None, alias="startDate"),
+    end_date: Optional[str] = Query(None, alias="endDate"),
     current_user=Depends(get_current_user)
 ):
-    """Get paginated users list."""
+    """Get paginated users list with advanced filtering."""
     if current_user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="Permission denied")
     
@@ -133,6 +137,13 @@ async def get_users(
                 where["credits"]["gte"] = min_credits
             if max_credits is not None:
                 where["credits"]["lte"] = max_credits
+        
+        if start_date or end_date:
+            where["createdAt"] = {}
+            if start_date:
+                where["createdAt"]["gte"] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            if end_date:
+                where["createdAt"]["lte"] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
             
         users = await prisma.user.find_many(
             where=where,
@@ -197,6 +208,43 @@ async def unban_user(user_id: int, current_user=Depends(get_current_user)):
             data={"banned": False, "banReason": None, "bannedAt": None}
         )
         return {"message": "User unbanned successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/credits/batch")
+async def batch_adjust_credits(
+    input_data: BatchAdjustCreditsRequest,
+    current_user=Depends(get_current_user)
+):
+    """Batch adjust credits for multiple users."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    try:
+        service = CreditsService(prisma)
+        success_count = 0
+        failed_ids = []
+
+        for user_id in input_data.userIds:
+            try:
+                await service.admin_adjust_credits(
+                    user_id=user_id,
+                    amount=input_data.amount,
+                    description=input_data.description,
+                    admin_id=current_user.id
+                )
+                success_count += 1
+            except Exception:
+                failed_ids.append(user_id)
+
+        return {
+            "message": "Batch operation completed",
+            "total": len(input_data.userIds),
+            "successful": success_count,
+            "failed": len(failed_ids),
+            "failedIds": failed_ids
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

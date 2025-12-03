@@ -281,6 +281,12 @@ class AdjustCreditsRequest(BaseModel):
     description: str
 
 
+class BatchAdjustCreditsRequest(BaseModel):
+    userIds: List[int]
+    amount: int
+    description: str
+
+
 class GrantBonusRequest(BaseModel):
     userId: int
     amount: int

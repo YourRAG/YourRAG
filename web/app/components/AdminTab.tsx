@@ -9,11 +9,13 @@ import {
   Shield,
   Settings,
   Loader2,
+  CreditCard,
 } from "lucide-react";
 import { User } from "../types";
 import Modal, { ConfirmModal } from "./Modal";
 import UserListTable, { AdminUser } from "./UserListTable";
 import RedemptionCodesManager from "./RedemptionCodesManager";
+import BusinessPanel from "./BusinessPanel";
 
 interface AdminStats {
   totalUsers: number;
@@ -63,6 +65,7 @@ export default function AdminTab() {
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({});
   const [configLoading, setConfigLoading] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'system' | 'business'>('system');
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -245,7 +248,37 @@ export default function AdminTab() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+    <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
+      {/* Sub Tabs */}
+      <div className="flex p-1 bg-slate-200/50 rounded-xl w-fit backdrop-blur-sm">
+        <button
+          onClick={() => setActiveSubTab('system')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+            activeSubTab === 'system'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Settings className="w-4 h-4" />
+          System Management
+        </button>
+        <button
+          onClick={() => setActiveSubTab('business')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+            activeSubTab === 'business'
+              ? 'bg-white text-indigo-600 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <CreditCard className="w-4 h-4" />
+          Business Panel
+        </button>
+      </div>
+
+      {activeSubTab === 'business' ? (
+        <BusinessPanel apiUrl={API_URL} />
+      ) : (
+        <div className="space-y-8 animate-fade-in">
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -488,6 +521,8 @@ export default function AdminTab() {
         confirmText="Unban User"
         variant="primary"
       />
+        </div>
+      )}
     </div>
   );
 }
