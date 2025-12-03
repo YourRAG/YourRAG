@@ -249,6 +249,28 @@ async def batch_adjust_credits(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/admin/transactions/{transaction_id}")
+async def delete_transaction(transaction_id: int, current_user=Depends(get_current_user)):
+    """Delete a transaction record (Admin only)."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    try:
+        # Check if transaction exists
+        transaction = await prisma.transaction.find_unique(where={"id": transaction_id})
+        if not transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
+        # Delete transaction
+        await prisma.transaction.delete(where={"id": transaction_id})
+        
+        return {"message": "Transaction deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/admin/users/{user_id}/activities", response_model=ActivitiesResponse)
 async def get_user_activities(
     user_id: int,

@@ -12,10 +12,14 @@ import {
   Loader2,
   CreditCard,
   RefreshCw,
-  ArrowRight
+  ArrowRight,
+  History,
+  Trash2,
+  AlertCircle
 } from "lucide-react";
 import { AdminUser } from "./UserListTable";
-import Modal from "./Modal";
+import Modal, { ConfirmModal } from "./Modal";
+import { Transaction } from "../types";
 
 interface UsersResponse {
   users: AdminUser[];
@@ -55,6 +59,13 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
   const [actionAmount, setActionAmount] = useState("");
   const [actionDescription, setActionDescription] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Transaction History State
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [targetUser, setTargetUser] = useState<AdminUser | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [deleteTransactionId, setDeleteTransactionId] = useState<number | null>(null);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -156,12 +167,52 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
         setSelectedUserIds([]);
         setSelectAll(false);
         fetchUsers();
-        // You might want to show a success toast here
       }
     } catch (error) {
       console.error("Failed to execute batch action:", error);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const fetchTransactions = async (userId: number) => {
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`${apiUrl}/credits/admin/user/${userId}/transactions?limit=100`, {
+        credentials: "include"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTransactions(data.transactions);
+      }
+    } catch (error) {
+      console.error("Failed to fetch transactions:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const openHistoryModal = (user: AdminUser) => {
+    setTargetUser(user);
+    setShowHistoryModal(true);
+    fetchTransactions(user.id);
+  };
+
+  const handleDeleteTransaction = async () => {
+    if (!deleteTransactionId || !targetUser) return;
+
+    try {
+      const res = await fetch(`${apiUrl}/admin/transactions/${deleteTransactionId}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+
+      if (res.ok) {
+        setDeleteTransactionId(null);
+        fetchTransactions(targetUser.id);
+      }
+    } catch (error) {
+      console.error("Failed to delete transaction:", error);
     }
   };
 
@@ -335,6 +386,7 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
                 <th className="px-6 py-4">Credits</th>
                 <th className="px-6 py-4">Documents</th>
                 <th className="px-6 py-4">Registration Date</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -407,6 +459,15 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
                       <span className="text-slate-400 text-xs block">
                         {new Date(user.createdAt).toLocaleTimeString()}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => openHistoryModal(user)}
+                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        title="View Transaction History"
+                      >
+                        <History className="w-5 h-5" />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -510,6 +571,78 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
           </div>
         </div>
       </Modal>
+
+      {/* Transaction History Modal */}
+      <Modal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        title={`Transaction History: ${targetUser?.username}`}
+      >
+        <div className="space-y-4">
+          <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" />
+            <p className="text-sm text-yellow-700">
+              Only transaction records are deleted. User credit balances are <strong>NOT</strong> automatically adjusted.
+            </p>
+          </div>
+
+          <div className="max-h-[60vh] overflow-y-auto -mx-6 px-6">
+            {loadingHistory ? (
+              <div className="py-12 text-center">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500" />
+              </div>
+            ) : transactions.length === 0 ? (
+              <div className="py-12 text-center text-slate-500">
+                No transactions found for this user.
+              </div>
+            ) : (
+                <div className="space-y-3 pb-2">
+                {transactions.map((tx) => (
+                  <div key={tx.id} className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center justify-between group hover:border-slate-300 transition-colors">
+                    <div>
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                                tx.amount > 0 ? "bg-green-100 text-green-700" : "bg-slate-200 text-slate-700"
+                            }`}>
+                                {tx.type}
+                            </span>
+                            <span className="text-xs text-slate-400">
+                                {new Date(tx.createdAt).toLocaleString()}
+                            </span>
+                        </div>
+                        <p className="text-sm font-medium text-slate-900">{tx.description}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <span className={`font-mono font-bold ${
+                            tx.amount > 0 ? "text-green-600" : "text-slate-900"
+                        }`}>
+                            {tx.amount > 0 ? "+" : ""}{tx.amount}
+                        </span>
+                        <button
+                            onClick={() => setDeleteTransactionId(tx.id)}
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                            title="Delete Transaction Record"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmModal
+        isOpen={!!deleteTransactionId}
+        onClose={() => setDeleteTransactionId(null)}
+        onConfirm={handleDeleteTransaction}
+        title="Delete Transaction Record"
+        message="Are you sure you want to delete this transaction record? This action ONLY deletes the history log and does NOT affect the user's current credit balance."
+        confirmText="Delete Record"
+        variant="danger"
+      />
     </div>
   );
 }
