@@ -19,6 +19,8 @@ from auth import get_chat_user
 from redis_service import RedisService
 from llm_service import LLMService
 from mcp_client import MCPClient
+import ftfy
+from datetime import datetime
 
 router = APIRouter()
 
@@ -87,9 +89,13 @@ async def source_search_background(
         llm_service = LLMService()
         all_results: Dict[str, SourceSearchResult] = {}  # URL as key for dedup
         
+        current_date = datetime.now().strftime('%Y-%m-%d')
+
         # Generate better search queries using LLM for non-English queries
         try:
             query_prompt = f"""Generate 2-3 effective web search queries for the following topic.
+Current Date: {current_date}
+
 If the query is in Chinese or another non-English language, provide both:
 1. The original language query (refined)
 2. An English translation query
@@ -102,7 +108,7 @@ Respond with ONLY a JSON array of search query strings:
             query_response = llm_service.chat_completion(
                 query=query_prompt,
                 contexts=[],
-                system_prompt="You are a search query optimizer. Output only a JSON array of search queries.",
+                system_prompt=f"You are a search query optimizer. Current Date: {current_date}. Output only a JSON array of search queries.",
                 temperature=0.5,
                 max_tokens=200,
             )
@@ -217,17 +223,21 @@ Respond with ONLY a JSON array of search query strings:
                             print(f"[SourceSearch] Skipping item {idx}: no url or duplicate")
                             continue
                             
-                            # Create snippet from text
-                            snippet = text[:300] + "..." if len(text) > 300 else text
-                            
-                            search_result = SourceSearchResult(
-                                url=url,
-                                title=title or url[:50],
-                                snippet=snippet,
-                            )
-                            round_results.append(search_result)
-                            all_results[url] = search_result
-                            print(f"[SourceSearch] Added result: {url[:50]}...")
+                        # Fix encoding issues using ftfy
+                        text = ftfy.fix_text(text)
+                        title = ftfy.fix_text(title)
+                        
+                        # Create snippet from text
+                        snippet = text[:300] + "..." if len(text) > 300 else text
+                        
+                        search_result = SourceSearchResult(
+                            url=url,
+                            title=title or url[:50],
+                            snippet=snippet,
+                        )
+                        round_results.append(search_result)
+                        all_results[url] = search_result
+                        print(f"[SourceSearch] Added result: {url[:50]}...")
                             
                 except Exception as search_error:
                     print(f"[SourceSearch] Search error for query '{search_query}': {search_error}")
@@ -249,6 +259,7 @@ Respond with ONLY a JSON array of search query strings:
                     ])
                     
                     prompt = f"""Based on the user's original query and the search results so far, suggest 2-3 related search queries to find more relevant sources.
+Current Date: {current_date}
 
 Original query: {query}
 
@@ -261,7 +272,7 @@ Respond with ONLY a JSON array of search query strings, nothing else:
                     response = llm_service.chat_completion(
                         query=prompt,
                         contexts=[],
-                        system_prompt="You are a search query generator. Respond only with a JSON array of search queries.",
+                        system_prompt=f"You are a search query generator. Current Date: {current_date}. Respond only with a JSON array of search queries.",
                         temperature=0.7,
                         max_tokens=200,
                     )
@@ -456,22 +467,29 @@ async def batch_import_urls(
                         error="No text content could be extracted",
                     ))
                     continue
+
+                # Fix encoding issues using ftfy
+                raw_content = ftfy.fix_text(raw_content)
+                if title:
+                    title = ftfy.fix_text(title)
                 
                 # Convert to markdown using LLM
                 try:
-                    format_prompt = f"""Convert the following web content to clean, well-formatted Markdown. 
-                    
+                    format_prompt = f"""Convert the following web content to clean, well-formatted Markdown.
+Current Date: {datetime.now().strftime('%Y-%m-%d')}
+
 Rules:
 1. Preserve headings hierarchy using # ## ###
 2. Keep important links and code blocks
 3. Remove navigation elements, ads, cookie notices
 4. Clean up excessive whitespace
 5. Preserve the main article content structure
+6. If the content appears to be garbled or encoding-broken, try to interpret the likely correct characters.
 
 Source URL: {url}
 
 Content:
-{raw_content[:10000]}"""
+{raw_content[:15000]}"""
 
                     markdown_content = llm_service.chat_completion(
                         query=format_prompt,
@@ -481,6 +499,12 @@ Content:
                         max_tokens=4000,
                     )
                     markdown_content = markdown_content.strip()
+                    
+                    # Check if LLM returned an error or empty content
+                    if not markdown_content or len(markdown_content) < 10:
+                        print(f"LLM returned empty or too short content for {url}, falling back to raw content")
+                        markdown_content = raw_content.strip()
+                        
                 except Exception as llm_error:
                     print(f"LLM formatting failed for {url}: {llm_error}")
                     markdown_content = raw_content.strip()

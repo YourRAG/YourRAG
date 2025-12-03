@@ -9,3 +9,4 @@ redis
 pymupdf
 python-docx
 python-multipart
+ftfy

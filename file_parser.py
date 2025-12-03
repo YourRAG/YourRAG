@@ -5,6 +5,7 @@ Extracts text content from PDF and DOCX files.
 
 import io
 from typing import Optional
+import ftfy
 
 
 class FileParseError(Exception):
@@ -179,6 +180,7 @@ class FileParser:
         """
         Clean extracted text.
         
+        - Fix encoding issues using ftfy
         - Remove excessive whitespace
         - Normalize line breaks
         - Remove null characters
@@ -186,6 +188,9 @@ class FileParser:
         if not text:
             return ""
         
+        # Fix encoding issues
+        text = ftfy.fix_text(text)
+
         # Remove null characters
         text = text.replace('\x00', '')
         
