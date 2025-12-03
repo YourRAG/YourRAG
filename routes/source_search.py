@@ -42,8 +42,8 @@ async def get_task_status(task_id: str, user_id: int) -> Optional[SourceSearchSt
         if data:
             task_data = json.loads(data)
             return SourceSearchStatus(**task_data)
-    except Exception as e:
-        print(f"Redis get failed: {e}")
+    except Exception:
+        pass
     
     # Fallback to memory
     memory_key = f"{user_id}:{task_id}"
@@ -61,8 +61,8 @@ async def save_task_status(task_id: str, user_id: int, status: SourceSearchStatu
     try:
         client = RedisService.get_client()
         await client.set(key, status.model_dump_json(), ex=REDIS_KEY_EXPIRE)
-    except Exception as e:
-        print(f"Redis set failed: {e}")
+    except Exception:
+        pass
 
 
 async def source_search_background(
@@ -124,9 +124,7 @@ Respond with ONLY a JSON array of search query strings:
             else:
                 search_queries = [query]
             
-            print(f"[SourceSearch] Optimized queries: {search_queries}")
         except Exception as e:
-            print(f"[SourceSearch] Query optimization failed: {e}, using original query")
             search_queries = [query]
         
         for round_num in range(1, max_rounds + 1):
@@ -139,7 +137,6 @@ Respond with ONLY a JSON array of search query strings:
             # Execute searches for current round's queries
             for search_query in search_queries[:3]:  # Limit to 3 queries per round
                 try:
-                    print(f"[SourceSearch] Searching: '{search_query}'")
                     results = mcp_client.search_with_exa(
                         query=search_query,
                         num_results=results_per_round,
@@ -147,8 +144,6 @@ Respond with ONLY a JSON array of search query strings:
                         search_type="auto",
                         context_max_characters=3000,
                     )
-                    
-                    print(f"[SourceSearch] Raw results type: {type(results)}, length: {len(results) if isinstance(results, list) else 'N/A'}")
                     
                     # Handle different result formats
                     items_to_process = []
@@ -164,7 +159,7 @@ Respond with ONLY a JSON array of search query strings:
                                     items_to_process.append(item)
                             elif isinstance(item, str):
                                 # If it's a string, it might contain the data
-                                print(f"[SourceSearch] Got string item: {item[:200]}...")
+                                pass
                     elif isinstance(results, dict):
                         # Results might be wrapped in a dict
                         if "results" in results:
@@ -173,8 +168,6 @@ Respond with ONLY a JSON array of search query strings:
                             items_to_process = results["data"]
                         else:
                             items_to_process = [results]
-                    
-                    print(f"[SourceSearch] Items to process: {len(items_to_process)}")
                     
                     for idx, result in enumerate(items_to_process):
                         url = ""
@@ -211,7 +204,6 @@ Respond with ONLY a JSON array of search query strings:
                                 else:
                                     text = raw_text
                                     
-                                print(f"[SourceSearch] Parsed Exa format - url: {url[:50] if url else 'None'}, title: {title[:30] if title else 'None'}")
                             else:
                                 # Standard dict format
                                 url = result.get("url", "") or result.get("link", "") or result.get("href", "")
@@ -220,7 +212,6 @@ Respond with ONLY a JSON array of search query strings:
                         
                         # Skip if no URL or already have it
                         if not url or url in all_results:
-                            print(f"[SourceSearch] Skipping item {idx}: no url or duplicate")
                             continue
                             
                         # Fix encoding issues using ftfy
@@ -237,12 +228,8 @@ Respond with ONLY a JSON array of search query strings:
                         )
                         round_results.append(search_result)
                         all_results[url] = search_result
-                        print(f"[SourceSearch] Added result: {url[:50]}...")
                             
-                except Exception as search_error:
-                    print(f"[SourceSearch] Search error for query '{search_query}': {search_error}")
-                    import traceback
-                    traceback.print_exc()
+                except Exception:
                     continue
             
             # Update results after each round
@@ -287,8 +274,7 @@ Respond with ONLY a JSON array of search query strings, nothing else:
                     if isinstance(new_queries, list) and len(new_queries) > 0:
                         search_queries = [q for q in new_queries if isinstance(q, str)][:3]
                     
-                except Exception as llm_error:
-                    print(f"LLM query generation error: {llm_error}")
+                except Exception:
                     # Continue with original query if LLM fails
                     search_queries = [query]
             
@@ -301,10 +287,6 @@ Respond with ONLY a JSON array of search query strings, nothing else:
         await save_task_status(task_id, user_id, status)
         
     except Exception as e:
-        print(f"Source search background task error: {e}")
-        import traceback
-        traceback.print_exc()
-        
         status = SourceSearchStatus(
             task_id=task_id,
             status="failed",
@@ -502,11 +484,9 @@ Content:
                     
                     # Check if LLM returned an error or empty content
                     if not markdown_content or len(markdown_content) < 10:
-                        print(f"LLM returned empty or too short content for {url}, falling back to raw content")
                         markdown_content = raw_content.strip()
                         
-                except Exception as llm_error:
-                    print(f"LLM formatting failed for {url}: {llm_error}")
+                except Exception:
                     markdown_content = raw_content.strip()
                 
                 results.append(BatchUrlImportResult(
@@ -518,7 +498,6 @@ Content:
                 ))
                 
             except Exception as crawl_error:
-                print(f"Crawl error for {url}: {crawl_error}")
                 results.append(BatchUrlImportResult(
                     url=url,
                     success=False,

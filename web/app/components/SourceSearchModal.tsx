@@ -301,19 +301,30 @@ export default function SourceSearchModal({ isOpen, onClose, onImport }: SourceS
         {/* Search Input */}
         <div className="p-4 border-b border-slate-100 space-y-3">
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Enter a topic to search for sources..."
-              className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && query.trim() && !isSearching) {
-                  handleSearch();
-                }
-              }}
-              disabled={isSearching}
-            />
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Enter a topic to search for sources..."
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm pr-10"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && query.trim() && !isSearching) {
+                    handleSearch();
+                  }
+                }}
+                disabled={isSearching}
+              />
+              {query && !isSearching && (
+                <button
+                  onClick={() => setQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+                  title="Clear"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
             <button
               onClick={handleSearch}
               disabled={!query.trim() || isSearching}

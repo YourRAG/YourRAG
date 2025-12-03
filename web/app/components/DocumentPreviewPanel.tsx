@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FileText, ChevronRight, Hash, Scissors, Loader2, Sparkles, Shield, BookMarked } from "lucide-react";
+import { FileText, ChevronRight, Hash, Scissors, Loader2, Sparkles, Shield, BookMarked, Trash2 } from "lucide-react";
 import Markdown from "./Markdown";
 import FactCheckModal, { CredibilityBadge, FactCheckResult, KnowledgeCheckResult, CheckMode } from "./FactCheckModal";
+import { ConfirmModal } from "./Modal";
 
 interface DocumentPreviewPanelProps {
   content: string;
@@ -11,6 +12,7 @@ interface DocumentPreviewPanelProps {
   activeDocIndex?: number;
   onChunkDocument?: (docIndex: number, chunks: string[]) => void;
   onChunkAll?: (allChunks: string[]) => void;
+  onDeleteDocument?: (index: number) => void;
 }
 
 interface ParsedDocument {
@@ -44,6 +46,7 @@ export default function DocumentPreviewPanel({
   activeDocIndex,
   onChunkDocument,
   onChunkAll,
+  onDeleteDocument,
 }: DocumentPreviewPanelProps) {
   const [chunkingIndex, setChunkingIndex] = useState<number | null>(null);
   const [chunkingAll, setChunkingAll] = useState(false);
@@ -67,6 +70,23 @@ export default function DocumentPreviewPanel({
     result: KnowledgeCheckResult | null;
     isLoading: boolean;
   } | null>(null);
+
+  // Delete confirmation state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [docToDelete, setDocToDelete] = useState<number | null>(null);
+
+  const handleDeleteClick = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDocToDelete(index);
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (docToDelete !== null && onDeleteDocument) {
+      onDeleteDocument(docToDelete);
+      setDocToDelete(null);
+    }
+  };
 
   const documents = useMemo((): ParsedDocument[] => {
     if (!content.trim()) return [];
@@ -534,6 +554,15 @@ export default function DocumentPreviewPanel({
                 </span>
               </div>
               <div className="flex items-center gap-1">
+                {onDeleteDocument && (
+                  <button
+                    onClick={(e) => handleDeleteClick(doc.index, e)}
+                    className="p-1.5 rounded-md transition-colors text-slate-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 mr-1"
+                    title="Delete document"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 {/* Knowledge Check Badge or Button */}
                 {knowledgeCheckStates[doc.index]?.result ? (
                   <CredibilityBadge
@@ -757,6 +786,20 @@ export default function DocumentPreviewPanel({
               });
           }
         } : undefined}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setDocToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Delete Document"
+        message="Are you sure you want to delete this document? This action cannot be undone."
+        confirmText="Delete"
+        variant="danger"
       />
     </div>
   );

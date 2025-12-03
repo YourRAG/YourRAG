@@ -183,6 +183,32 @@ export default function AddDocumentTab() {
     setTimeout(() => setMessage(""), 3000);
   }, []);
 
+  const handleDeleteDocument = useCallback((index: number) => {
+    setContent((prev) => {
+      const parts = prev.split("--------");
+      // Filter out empty parts first to match logic in other functions
+      const docs: string[] = [];
+      parts.forEach((part) => {
+        const trimmed = part.trim();
+        if (trimmed.length > 0) {
+          docs.push(trimmed);
+        }
+      });
+      
+      if (index >= 0 && index < docs.length) {
+        docs.splice(index, 1);
+        const separator = "\n\n--------\n\n";
+        return docs.join(separator);
+      }
+      return prev;
+    });
+    
+    // Clear active doc index if the deleted one was active or if active index is now out of bounds
+    setActiveDocIndex(undefined);
+    setMessage("Document deleted");
+    setTimeout(() => setMessage(""), 3000);
+  }, []);
+
   // Smart chunk the entire content directly
   const handleSmartChunk = async () => {
     if (!content.trim() || isChunking) return;
@@ -484,6 +510,7 @@ export default function AddDocumentTab() {
                 activeDocIndex={activeDocIndex}
                 onChunkDocument={handleChunkDocument}
                 onChunkAll={handleChunkAll}
+                onDeleteDocument={handleDeleteDocument}
               />
             </div>
           )}
@@ -661,7 +688,7 @@ export default function AddDocumentTab() {
                         title="Search for sources online and import"
                       >
                         <Search className="w-3 h-3" />
-                        <span className="hidden xs:inline">Sources</span>
+                        <span className="hidden xs:inline">Source Search</span>
                         <span className="xs:hidden">Src</span>
                       </button>
                       <button
@@ -830,19 +857,30 @@ export default function AddDocumentTab() {
                   <p className="text-sm text-slate-600">
                     Enter a URL to extract and import its content as Markdown.
                   </p>
-                  <input
-                    type="url"
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    placeholder="https://example.com/article"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && urlInput.trim()) {
-                        handleUrlImport();
-                      }
-                    }}
-                  />
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={urlInput}
+                      onChange={(e) => setUrlInput(e.target.value)}
+                      placeholder="https://example.com/article"
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm pr-10"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && urlInput.trim()) {
+                          handleUrlImport();
+                        }
+                      }}
+                    />
+                    {urlInput && (
+                      <button
+                        onClick={() => setUrlInput('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+                        title="Clear"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                   <div className="flex gap-3 justify-end">
                     <button
                       type="button"
@@ -1299,19 +1337,30 @@ export default function AddDocumentTab() {
                 <p className="text-sm text-slate-600">
                   Enter a URL to extract and import its content as Markdown.
                 </p>
-                <input
-                  type="url"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://example.com/article"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && urlInput.trim()) {
-                      handleUrlImport();
-                    }
-                  }}
-                />
+                <div className="relative">
+                  <input
+                    type="url"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    placeholder="https://example.com/article"
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all text-sm pr-10"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && urlInput.trim()) {
+                        handleUrlImport();
+                      }
+                    }}
+                  />
+                  {urlInput && (
+                    <button
+                      onClick={() => setUrlInput('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+                      title="Clear"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
                 <div className="flex gap-3 justify-end">
                   <button
                     type="button"
