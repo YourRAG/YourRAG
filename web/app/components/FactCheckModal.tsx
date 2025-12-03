@@ -90,6 +90,18 @@ function getScoreBgColor(score: number): string {
   return "bg-red-500";
 }
 
+// Check if browser language is Chinese
+function useIsChinese(): boolean {
+  const [isChinese, setIsChinese] = useState(true); // Default to Chinese for SSR
+  
+  useEffect(() => {
+    const lang = navigator.language.toLowerCase();
+    setIsChinese(lang.startsWith("zh"));
+  }, []);
+  
+  return isChinese;
+}
+
 export default function FactCheckModal({
   isOpen,
   onClose,
@@ -98,6 +110,7 @@ export default function FactCheckModal({
   onRetry,
 }: FactCheckModalProps) {
   const [mounted, setMounted] = useState(false);
+  const isChinese = useIsChinese();
 
   useEffect(() => {
     setMounted(true);
@@ -164,10 +177,10 @@ export default function FactCheckModal({
                     </div>
                     <div>
                       <div className={`text-lg font-bold ${verdictInfo?.color}`}>
-                        {verdictInfo?.labelCn}
+                        {isChinese ? verdictInfo?.labelCn : verdictInfo?.label}
                       </div>
                       <div className="text-xs text-slate-500">
-                        {verdictInfo?.label}
+                        {isChinese ? verdictInfo?.label : verdictInfo?.labelCn}
                       </div>
                     </div>
                   </div>
