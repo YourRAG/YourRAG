@@ -31,7 +31,8 @@ class MCPClient:
             timeout: 请求超时时间（秒，默认 60）
         """
         self.server_url = server_url or os.getenv(
-            "MCP_SERVER_URL", "https://mcp.exa.ai/mcp"
+            "MCP_SERVER_URL",
+            "https://mcp.exa.ai/mcp?enabledTools=%5b%22crawling_exa%22%2c%22get_code_context_exa%22%2c%22web_search_exa%22%5d",
         )
         self.api_key = api_key or os.getenv("MCP_API_KEY")
         self.timeout = timeout
@@ -90,7 +91,7 @@ class MCPClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
-            
+
             # 强制使用 UTF-8 编码，避免中文乱码
             response.encoding = 'utf-8'
 
