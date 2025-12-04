@@ -181,6 +181,7 @@ class ConfigService:
             "ENABLE_ACTIVITY_TRACKING": "true",  # Default: Activity tracking is enabled
             "DISABLE_REGISTRATION": "false",  # Default: Registration is enabled
             "REDEMPTION_PURCHASE_LINK": "",   # Default: No purchase link
+            "ENABLE_EMBEDDING_AUTO_ROUTING": "false", # Default check for Google Gemini models
         }
         
         for key, value in defaults.items():
@@ -221,6 +222,11 @@ class ConfigService:
     def is_activity_tracking_enabled(self) -> bool:
         """Check if activity tracking is enabled."""
         value = self._config_cache.get("ENABLE_ACTIVITY_TRACKING", "true")
+        return value.lower() == "true"
+
+    def is_embedding_auto_routing_enabled(self) -> bool:
+        """Check if embedding auto routing is enabled."""
+        value = self._config_cache.get("ENABLE_EMBEDDING_AUTO_ROUTING", "false")
         return value.lower() == "true"
 
 # Global instance

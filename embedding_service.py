@@ -29,9 +29,13 @@ class EmbeddingService:
 
     def get_embeddings(self, texts: List[str], max_retries: int = 3) -> List[List[float]]:
         """Get embeddings for a list of text strings using OpenAI-compatible API or Google Gemini."""
-        
+
         # Check for Google Gemini models (e.g., gemini-embedding-001)
-        if "gemini" in self.model_name.lower():
+        # Only if auto-routing is enabled
+        if (
+            config_service.is_embedding_auto_routing_enabled()
+            and "gemini" in self.model_name.lower()
+        ):
             return self._get_google_embeddings(texts, max_retries)
 
         payload = {
@@ -68,16 +72,16 @@ class EmbeddingService:
         """Get embeddings using Google Gemini API."""
         # Clean model name (remove 'models/' prefix if present)
         model_id = self.model_name.replace("models/", "")
-        
+
         # Construct Google API URL
         # https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:batchEmbedContents"
-        
+
         headers = {
             "Content-Type": "application/json",
             "x-goog-api-key": self.api_key
         }
-        
+
         # Prepare batch request with multiple content parts
         # Google API expects {"requests": [{"content": {"parts": [{"text": "..."}]}}]}
         requests = [
@@ -89,7 +93,7 @@ class EmbeddingService:
             }
             for text in texts
         ]
-        
+
         payload = {"requests": requests}
 
         for attempt in range(max_retries):
@@ -97,10 +101,10 @@ class EmbeddingService:
                 response = httpx.post(url, headers=headers, json=payload, timeout=60.0)
                 response.raise_for_status()
                 data = response.json()
-                
+
                 if "embeddings" not in data:
                     raise ValueError(f"Invalid response from Google API: {data}")
-                
+
                 # Extract embeddings (Google returns them in order)
                 embeddings = [item["values"] for item in data["embeddings"]]
                 return embeddings

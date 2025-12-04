@@ -34,6 +34,7 @@ interface UsersResponse {
 interface SystemConfig {
   ENABLE_ACTIVITY_TRACKING?: string;
   DISABLE_REGISTRATION?: string;
+  ENABLE_EMBEDDING_AUTO_ROUTING?: string;
   [key: string]: string | undefined;
 }
 
@@ -127,6 +128,11 @@ export default function AdminTab() {
   const handleRegistrationToggle = () => {
     const currentValue = systemConfig.DISABLE_REGISTRATION === "true";
     updateConfig("DISABLE_REGISTRATION", (!currentValue).toString());
+  };
+
+  const handleAutoRoutingToggle = () => {
+    const currentValue = systemConfig.ENABLE_EMBEDDING_AUTO_ROUTING === "true";
+    updateConfig("ENABLE_EMBEDDING_AUTO_ROUTING", (!currentValue).toString());
   };
 
   const handlePurchaseLinkSave = () => {
@@ -399,6 +405,40 @@ export default function AdminTab() {
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                       systemConfig.ENABLE_ACTIVITY_TRACKING === "true"
+                        ? "translate-x-6"
+                        : "translate-x-1"
+                    }`}
+                  />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-slate-900">Automatic Embedding Routing</p>
+                <p className="text-sm text-slate-500">
+                  Automatically use Google Gemini API for embeddings when model name contains "gemini"
+                </p>
+              </div>
+              <button
+                onClick={handleAutoRoutingToggle}
+                disabled={configLoading || configSaving}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  systemConfig.ENABLE_EMBEDDING_AUTO_ROUTING === "true"
+                    ? "bg-blue-600"
+                    : "bg-slate-200"
+                } ${(configLoading || configSaving) ? "opacity-50 cursor-not-allowed" : ""}`}
+              >
+                {configSaving ? (
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <Loader2 className="w-3 h-3 animate-spin text-white" />
+                  </span>
+                ) : (
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      systemConfig.ENABLE_EMBEDDING_AUTO_ROUTING === "true"
                         ? "translate-x-6"
                         : "translate-x-1"
                     }`}
