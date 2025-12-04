@@ -9,6 +9,8 @@ import {
   Coins,
   Receipt,
   TrendingUp,
+  ExternalLink,
+  ShoppingCart,
   TrendingDown,
   Gift,
   RefreshCw,
@@ -165,6 +167,21 @@ export default function BillingPage() {
   const [redemptionCode, setRedemptionCode] = useState("");
   const [redeemLoading, setRedeemLoading] = useState(false);
   const [redeemMessage, setRedeemMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [purchaseLink, setPurchaseLink] = useState("");
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/system/config`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.REDEMPTION_PURCHASE_LINK) {
+          setPurchaseLink(data.REDEMPTION_PURCHASE_LINK);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch config:", error);
+    }
+  }, []);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -215,12 +232,11 @@ export default function BillingPage() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await fetchSummary();
-      await fetchTransactions();
+      await Promise.all([fetchSummary(), fetchTransactions(), fetchConfig()]);
       setLoading(false);
     };
     init();
-  }, [fetchSummary, fetchTransactions]);
+  }, [fetchSummary, fetchTransactions, fetchConfig]);
 
   useEffect(() => {
     if (!loading) {
@@ -425,6 +441,33 @@ export default function BillingPage() {
               </div>
               
               <div className="p-6">
+                 {purchaseLink && (
+                   <div className="mb-6">
+                     <a
+                       href={purchaseLink}
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       className="flex items-center justify-center gap-2 w-full py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-medium transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
+                     >
+                       <ShoppingCart className="w-4 h-4" />
+                       Buy Redemption Code
+                       <ExternalLink className="w-3 h-3 opacity-70" />
+                     </a>
+                     <p className="text-xs text-center text-slate-400 mt-2">
+                       Opens in a new window
+                     </p>
+                   </div>
+                 )}
+
+                 <div className="relative my-6">
+                   <div className="absolute inset-0 flex items-center">
+                     <div className="w-full border-t border-slate-200"></div>
+                   </div>
+                   <div className="relative flex justify-center text-xs uppercase">
+                     <span className="bg-white px-2 text-slate-400">Or enter code</span>
+                   </div>
+                 </div>
+
                  <div className="space-y-4">
                   <div>
                     <input

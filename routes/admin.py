@@ -1,9 +1,10 @@
 """Admin routes including user management, system config, and API keys."""
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from typing import Optional, List
 from datetime import datetime
 import uuid
+import json
 
 from fastapi import Query
 
@@ -16,6 +17,8 @@ from schemas import (
     ApiKeyResponse,
     ActivitiesResponse,
     BatchAdjustCreditsRequest,
+    BulkImportResponse,
+    BulkAdjustmentItem,
 )
 from auth import get_current_user, prisma
 from redis_service import RedisService
@@ -245,6 +248,84 @@ async def batch_adjust_credits(
             "failed": len(failed_ids),
             "failedIds": failed_ids
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/credits/bulk-import", response_model=BulkImportResponse)
+async def bulk_import_credits(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user)
+):
+    """Import bulk credit adjustments from JSON file."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    if not file.filename.endswith('.json'):
+        raise HTTPException(status_code=400, detail="Only JSON files are allowed")
+
+    try:
+        content = await file.read()
+        data = json.loads(content)
+        
+        if not isinstance(data, list):
+            raise HTTPException(status_code=400, detail="JSON root must be a list of adjustments")
+
+        service = CreditsService(prisma)
+        results = []
+        success_count = 0
+        failed_count = 0
+
+        for item in data:
+            try:
+                adjustment = BulkAdjustmentItem(**item)
+            except Exception as e:
+                results.append({"status": "failed", "reason": f"Invalid format: {str(e)}", "data": item})
+                failed_count += 1
+                continue
+
+            # Find user
+            user = None
+            if adjustment.userId:
+                user = await prisma.user.find_unique(where={"id": adjustment.userId})
+            elif adjustment.username:
+                user = await prisma.user.find_first(where={"username": adjustment.username})
+            elif adjustment.email:
+                user = await prisma.user.find_first(where={"email": adjustment.email})
+
+            if not user:
+                results.append({"status": "failed", "reason": "User not found", "data": item})
+                failed_count += 1
+                continue
+
+            try:
+                await service.admin_adjust_credits(
+                    user_id=user.id,
+                    amount=adjustment.amount,
+                    description=adjustment.description,
+                    admin_id=current_user.id,
+                    reference_id=adjustment.referenceId
+                )
+                results.append({
+                    "status": "success",
+                    "user": user.username,
+                    "amount": adjustment.amount,
+                    "referenceId": adjustment.referenceId
+                })
+                success_count += 1
+            except Exception as e:
+                results.append({"status": "failed", "reason": str(e), "data": item})
+                failed_count += 1
+
+        return {
+            "total": len(data),
+            "successful": success_count,
+            "failed": failed_count,
+            "results": results
+        }
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

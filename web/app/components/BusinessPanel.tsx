@@ -15,11 +15,13 @@ import {
   ArrowRight,
   History,
   Trash2,
-  AlertCircle
+  AlertCircle,
+  Upload
 } from "lucide-react";
 import { AdminUser } from "./UserListTable";
 import Modal, { ConfirmModal } from "./Modal";
 import { Transaction } from "../types";
+import { useRef } from "react";
 
 interface UsersResponse {
   users: AdminUser[];
@@ -59,6 +61,12 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
   const [actionAmount, setActionAmount] = useState("");
   const [actionDescription, setActionDescription] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionMode, setActionMode] = useState<"manual" | "json">("manual");
+
+  // Bulk Import State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importResults, setImportResults] = useState<any | null>(null);
 
   // Transaction History State
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -145,35 +153,68 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
   };
 
   const handleBatchAction = async () => {
-    if (!actionAmount || !actionDescription || selectedUserIds.length === 0) return;
-    
-    setActionLoading(true);
-    try {
-      const res = await fetch(`${apiUrl}/admin/credits/batch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userIds: selectedUserIds,
-          amount: parseInt(actionAmount),
-          description: actionDescription
-        }),
-        credentials: "include"
-      });
+      setActionLoading(true);
+      
+      try {
+          if (actionMode === "manual") {
+              if (!actionAmount || !actionDescription || selectedUserIds.length === 0) return;
+              
+              const res = await fetch(`${apiUrl}/admin/credits/batch`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    userIds: selectedUserIds,
+                    amount: parseInt(actionAmount),
+                    description: actionDescription
+                  }),
+                  credentials: "include"
+                });
 
-      if (res.ok) {
-        setShowActionModal(false);
-        setActionAmount("");
-        setActionDescription("");
-        setSelectedUserIds([]);
-        setSelectAll(false);
-        fetchUsers();
+                if (res.ok) {
+                  setShowActionModal(false);
+                  setActionAmount("");
+                  setActionDescription("");
+                  setSelectedUserIds([]);
+                  setSelectAll(false);
+                  fetchUsers();
+                }
+          } else if (actionMode === "json") {
+              if (!importFile) return;
+              
+              const formData = new FormData();
+              formData.append("file", importFile);
+              
+              const res = await fetch(`${apiUrl}/admin/credits/bulk-import`, {
+                  method: "POST",
+                  body: formData, // FormData automatically sets multipart/form-data
+                  credentials: "include"
+              });
+              
+              if (res.ok) {
+                  const data = await res.json();
+                  setImportResults(data);
+                  setImportFile(null);
+                  if (data.failed === 0) {
+                      // If all success, close modal after a moment or let user review?
+                      // Let's keep it open to show results
+                      fetchUsers();
+                  }
+              }
+          }
+
+      } catch (error) {
+        console.error("Failed to execute batch action:", error);
+      } finally {
+        setActionLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to execute batch action:", error);
-    } finally {
-      setActionLoading(false);
-    }
-  };
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setImportFile(e.target.files[0]);
+            setImportResults(null); // Reset previous results
+        }
+    };
 
   const fetchTransactions = async (userId: number) => {
     setLoadingHistory(true);
@@ -277,12 +318,27 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
 
           <div className="flex items-end">
             <button
-              onClick={() => setShowActionModal(true)}
+              onClick={() => {
+                  setActionMode("manual");
+                  setShowActionModal(true);
+              }}
               disabled={selectedUserIds.length === 0}
               className="px-6 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2"
             >
               <DollarSign className="w-4 h-4" />
               Adjust Credits ({selectedUserIds.length})
+            </button>
+            <button
+              onClick={() => {
+                  setActionMode("json");
+                  setShowActionModal(true);
+                  setImportResults(null);
+                  setImportFile(null);
+              }}
+              className="ml-2 px-6 py-2 bg-white text-indigo-600 border border-indigo-200 rounded-xl hover:bg-indigo-50 transition-colors shadow-sm font-medium flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              Bulk Import (JSON)
             </button>
           </div>
         </div>
@@ -506,43 +562,136 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
       <Modal
         isOpen={showActionModal}
         onClose={() => setShowActionModal(false)}
-        title="Batch Credit Adjustment"
+        title={actionMode === "manual" ? "Batch Credit Adjustment" : "Bulk Import (JSON)"}
       >
         <div className="space-y-4">
-            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                <div className="flex items-center gap-2 mb-1">
-                    <Users className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm font-semibold text-blue-900">Target Users</span>
-                </div>
-                <p className="text-sm text-blue-700">
-                    You are about to adjust credits for <span className="font-bold">{selectedUserIds.length}</span> selected user(s).
-                </p>
-            </div>
+            {actionMode === "manual" ? (
+                <>
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Users className="w-4 h-4 text-blue-600" />
+                            <span className="text-sm font-semibold text-blue-900">Target Users</span>
+                        </div>
+                        <p className="text-sm text-blue-700">
+                            You are about to adjust credits for <span className="font-bold">{selectedUserIds.length}</span> selected user(s).
+                        </p>
+                    </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Amount (Positive to add, Negative to deduct)
-            </label>
-            <input
-              type="number"
-              value={actionAmount}
-              onChange={(e) => setActionAmount(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-              placeholder="e.g., 100 or -50"
-            />
-          </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Amount (Positive to add, Negative to deduct)
+                        </label>
+                        <input
+                        type="number"
+                        value={actionAmount}
+                        onChange={(e) => setActionAmount(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="e.g., 100 or -50"
+                        />
+                    </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Transaction Description (Required)
-            </label>
-            <textarea
-              value={actionDescription}
-              onChange={(e) => setActionDescription(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 min-h-[80px]"
-              placeholder="Reason for adjustment (e.g., 'Promotional Bonus' or 'Monthly Service Fee')"
-            />
-          </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Transaction Description (Required)
+                        </label>
+                        <textarea
+                        value={actionDescription}
+                        onChange={(e) => setActionDescription(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 min-h-[80px]"
+                        placeholder="Reason for adjustment (e.g., 'Promotional Bonus' or 'Monthly Service Fee')"
+                        />
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <Upload className="w-4 h-4 text-indigo-600" />
+                                <span className="text-sm font-semibold text-indigo-900">Upload JSON File</span>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const example = [
+                                        {
+                                            "userId": 1,
+                                            "amount": 100,
+                                            "description": "Bonus credits",
+                                            "referenceId": "INV-2024-001"
+                                        },
+                                        {
+                                            "username": "alice",
+                                            "amount": -50,
+                                            "description": "Service fee",
+                                            "referenceId": "INV-2024-002"
+                                        }
+                                    ];
+                                    const blob = new Blob([JSON.stringify(example, null, 2)], { type: "application/json" });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = "credits-import-template.json";
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                }}
+                                className="text-xs text-indigo-600 hover:text-indigo-800 underline block"
+                            >
+                                Download Template
+                            </button>
+                        </div>
+                        <input
+                            type="file"
+                            accept=".json"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            className="block w-full text-sm text-slate-500
+                            file:mr-4 file:py-2 file:px-4
+                            file:rounded-full file:border-0
+                            file:text-sm file:font-semibold
+                            file:bg-indigo-100 file:text-indigo-700
+                            hover:file:bg-indigo-200"
+                        />
+                        <div className="mt-2 text-xs text-slate-500">
+                            Example format:
+                            <pre className="bg-slate-900 text-slate-50 p-2 rounded mt-1 overflow-x-auto">
+{`[
+  {
+    "userId": 1, // OR "username": "john", OR "email": "john@example.com"
+    "amount": 100,
+    "description": "Bonus",
+    "referenceId": "REF123"
+  }
+]`}
+                            </pre>
+                        </div>
+                    </div>
+                    
+                    {importResults && (
+                        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                                <h4 className="font-medium text-sm text-slate-700">Import Results</h4>
+                                <div className="text-xs flex gap-2">
+                                    <span className="text-green-600">Success: {importResults.successful}</span>
+                                    <span className="text-red-600">Failed: {importResults.failed}</span>
+                                </div>
+                            </div>
+                            <div className="max-h-40 overflow-y-auto p-2 text-xs space-y-1">
+                                {importResults.results.map((res: any, idx: number) => (
+                                    <div key={idx} className={`p-2 rounded ${res.status === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                                        {res.status === 'success' ? (
+                                            <span>✅ {res.user}: {res.amount} ({res.referenceId})</span>
+                                        ) : (
+                                            <span>❌ Failed: {res.reason}</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
 
           <div className="flex justify-end gap-3 pt-4">
             <button
@@ -553,7 +702,11 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
             </button>
             <button
               onClick={handleBatchAction}
-              disabled={!actionAmount || !actionDescription || actionLoading}
+              disabled={
+                  actionMode === 'manual'
+                    ? (!actionAmount || !actionDescription || actionLoading)
+                    : (!importFile || actionLoading)
+              }
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {actionLoading ? (
@@ -563,7 +716,7 @@ export default function BusinessPanel({ apiUrl }: BusinessPanelProps) {
                 </>
               ) : (
                 <>
-                  Confirm Adjustment
+                  {actionMode === 'manual' ? "Confirm Adjustment" : "Start Import"}
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

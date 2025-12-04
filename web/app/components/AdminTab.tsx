@@ -65,6 +65,7 @@ export default function AdminTab() {
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({});
   const [configLoading, setConfigLoading] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
+  const [purchaseLink, setPurchaseLink] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<'system' | 'business'>('system');
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -88,6 +89,9 @@ export default function AdminTab() {
       if (res.ok) {
         const data = await res.json();
         setSystemConfig(data);
+        if (data.REDEMPTION_PURCHASE_LINK) {
+          setPurchaseLink(data.REDEMPTION_PURCHASE_LINK);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch config:", error);
@@ -123,6 +127,10 @@ export default function AdminTab() {
   const handleRegistrationToggle = () => {
     const currentValue = systemConfig.DISABLE_REGISTRATION === "true";
     updateConfig("DISABLE_REGISTRATION", (!currentValue).toString());
+  };
+
+  const handlePurchaseLinkSave = () => {
+    updateConfig("REDEMPTION_PURCHASE_LINK", purchaseLink);
   };
 
   const fetchAdmins = useCallback(async () => {
@@ -397,6 +405,37 @@ export default function AdminTab() {
                   />
                 )}
               </button>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-4">
+            <div className="space-y-3">
+              <div>
+                <p className="font-medium text-slate-900">Redemption Code Purchase Link</p>
+                <p className="text-sm text-slate-500">
+                  Set the URL where users can purchase redemption codes (e.g., Afdian, Buy Me a Coffee)
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={purchaseLink}
+                  onChange={(e) => setPurchaseLink(e.target.value)}
+                  placeholder="https://afdian.com/a/your-page"
+                  className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
+                />
+                <button
+                  onClick={handlePurchaseLinkSave}
+                  disabled={configSaving || purchaseLink === (systemConfig.REDEMPTION_PURCHASE_LINK || "")}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+                >
+                  {configSaving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -287,6 +287,22 @@ class BatchAdjustCreditsRequest(BaseModel):
     description: str
 
 
+class BulkAdjustmentItem(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    userId: Optional[int] = None
+    amount: int
+    description: str
+    referenceId: Optional[str] = None
+
+
+class BulkImportResponse(BaseModel):
+    total: int
+    successful: int
+    failed: int
+    results: List[Dict[str, Any]]
+
+
 class GrantBonusRequest(BaseModel):
     userId: int
     amount: int

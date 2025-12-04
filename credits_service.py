@@ -213,16 +213,19 @@ class CreditsService:
         amount: int,
         description: str,
         admin_id: int,
+        reference_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Admin operation to adjust user credits."""
+        final_ref_id = reference_id if reference_id else str(admin_id)
+        
         return await self.add_credits(
             user_id=user_id,
             amount=amount,
             trans_type=TransactionType.ADJUSTMENT,
             description=description,
-            reference_id=str(admin_id),
+            reference_id=final_ref_id,
             reference_type="ADMIN_ADJUSTMENT",
-            metadata={"adjustedBy": admin_id},
+            metadata={"adjustedBy": admin_id, "manualReference": reference_id},
         )
 
     async def grant_bonus(

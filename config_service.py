@@ -180,6 +180,7 @@ class ConfigService:
             "PUBLIC_KEY": config.PUBLIC_KEY.replace("\\n", "\n") if config.PUBLIC_KEY else "",
             "ENABLE_ACTIVITY_TRACKING": "true",  # Default: Activity tracking is enabled
             "DISABLE_REGISTRATION": "false",  # Default: Registration is enabled
+            "REDEMPTION_PURCHASE_LINK": "",   # Default: No purchase link
         }
         
         for key, value in defaults.items():
@@ -195,12 +196,13 @@ class ConfigService:
             await self.load_config()
             
         # Only return non-sensitive configs
-        public_keys = ["ENABLE_ACTIVITY_TRACKING", "DISABLE_REGISTRATION"]
+        public_keys = ["ENABLE_ACTIVITY_TRACKING", "DISABLE_REGISTRATION", "REDEMPTION_PURCHASE_LINK"]
         
         # Default values for public configs
         defaults = {
             "ENABLE_ACTIVITY_TRACKING": "true",
             "DISABLE_REGISTRATION": "false",
+            "REDEMPTION_PURCHASE_LINK": "",
         }
         
         result = {}
